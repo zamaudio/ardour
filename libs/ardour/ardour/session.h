@@ -102,6 +102,7 @@ class Bundle;
 class Butler;
 class Click;
 class Diskstream;
+class DelayLine;
 class ExportHandler;
 class ExportStatus;
 class Graph;

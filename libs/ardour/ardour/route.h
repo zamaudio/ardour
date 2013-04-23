@@ -53,6 +53,7 @@
 namespace ARDOUR {
 
 class Amp;
+class DelayLine;
 class Delivery;
 class IOProcessor;
 class Panner;
@@ -187,6 +188,7 @@ class Route : public SessionObject, public Automatable, public RouteGroupMember,
 	PeakMeter&       peak_meter()       { return *_meter.get(); }
 	const PeakMeter& peak_meter() const { return *_meter.get(); }
 	boost::shared_ptr<PeakMeter> shared_peak_meter() const { return _meter; }
+	boost::shared_ptr<DelayLine> delay_line() const  { return _delayline; }
 
 	void flush_processors ();
 
@@ -534,6 +536,7 @@ class Route : public SessionObject, public Automatable, public RouteGroupMember,
 
 	boost::shared_ptr<Amp>       _amp;
 	boost::shared_ptr<PeakMeter> _meter;
+	boost::shared_ptr<DelayLine> _delayline;
 
 	boost::shared_ptr<Processor> the_instrument_unlocked() const;
 

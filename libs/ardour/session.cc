@@ -4720,7 +4720,7 @@ Session::update_latency_compensation (bool force_whole_graph)
 		return;
 	}
 
-	DEBUG_TRACE(DEBUG::Latency, "---------------------------- update latency compensation\n\n");
+	DEBUG_TRACE(DEBUG::Latency, "\n---------------------------- update latency compensation\n");
 
 	_worst_track_latency = 0;
 
