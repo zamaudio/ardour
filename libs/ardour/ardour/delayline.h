@@ -53,7 +53,8 @@ private:
 	framecnt_t _delay, _pending_delay;
 	framecnt_t _bsiz,  _pending_bsiz;
 	frameoffset_t _roff, _woff;
-	Sample *_buf, *_pending_buf;
+	boost::shared_ptr<Sample> _buf;
+	boost::shared_ptr<Sample> _pending_buf;
 };
 
 } // namespace ARDOUR

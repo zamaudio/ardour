@@ -36,22 +36,18 @@ using namespace std;
 using namespace ARDOUR;
 
 DelayLine::DelayLine (Session& s, const std::string& name)
-    : Processor (s, string_compose ("delay-%1", name))
+    : Processor (s, string_compose ("latency-compensation-%1", name))
 		, _delay(0)
 		, _pending_delay(0)
 		, _bsiz(0)
 		, _pending_bsiz(0)
 		, _roff(0)
 		, _woff(0)
-		, _buf(NULL)
-		, _pending_buf(NULL)
 {
 }
 
 DelayLine::~DelayLine ()
 {
-	free(_buf);
-	free(_pending_buf);
 }
 
 #define FADE_LEN (16)
@@ -72,7 +68,7 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 
 		if (_bsiz > 0) {
 			// TODO copy/wrap buffer if it grows > (_woff-_roff)
-			memcpy(_pending_buf + boff * chn, _buf, sizeof(Sample) * _bsiz * chn);
+			memcpy(_pending_buf.get() + boff * chn, _buf.get(), sizeof(Sample) * _bsiz * chn);
 		}
 
 		if (_roff > _woff ) {
@@ -81,15 +77,14 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 			_roff += boff;
 		}
 
-		Sample *swap = _buf;
 		_buf = _pending_buf;
-		_pending_buf = swap;
 		_bsiz = _pending_bsiz;
 		_pending_bsiz = 0;
 	}
 
 	/* initially there may be no buffer -- delay == 0 */
-	if (!_buf) { return; }
+	Sample *buf = _buf.get();
+	if (!buf) { return; }
 
 	assert (_bsiz >= _pending_delay);
 	const framecnt_t rbs = _bsiz + 1;
@@ -113,8 +108,8 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 			Sample * const data = i->data();
 			for (pframes_t pos = 0; pos < fade_len; ++pos) {
 				const gain_t gain = (gain_t)(fade_len - pos) / (gain_t)fade_len;
-				_buf[ _woff * chn + c ] = data[ pos ];
-				data[ pos ] = _buf[ _roff * chn + c ] * gain;
+				buf[ _woff * chn + c ] = data[ pos ];
+				data[ pos ] = buf[ _roff * chn + c ] * gain;
 				_roff = (_roff + 1) % rbs;
 				_woff = (_woff + 1) % rbs;
 			}
@@ -134,8 +129,8 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 			Sample * const data = i->data();
 			for (pframes_t pos = fade_len; pos < 2 * fade_len; ++pos) {
 				const gain_t gain = (gain_t)(pos - fade_len) / (gain_t)fade_len;
-				_buf[ _woff * chn + c ] = data[ pos ];
-				data[ pos ] = _buf[ _roff * chn + c ] * gain;
+				buf[ _woff * chn + c ] = data[ pos ];
+				data[ pos ] = buf[ _roff * chn + c ] * gain;
 				_roff = (_roff + 1) % rbs;
 				_woff = (_woff + 1) % rbs;
 			}
@@ -160,8 +155,8 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 	for (BufferSet::audio_iterator i = bufs.audio_begin(); i != bufs.audio_end(); ++i, ++c) {
 		Sample * const data = i->data();
 		for (pframes_t pos = p0; pos < nsamples; ++pos) {
-			_buf[ _woff * chn + c ] = data[ pos ];
-			data[ pos ] = _buf[ _roff * chn + c ];
+			buf[ _woff * chn + c ] = data[ pos ];
+			data[ pos ] = buf[ _roff * chn + c ];
 			_roff = (_roff + 1) % rbs;
 			_woff = (_woff + 1) % rbs;
 		}
@@ -187,21 +182,15 @@ DelayLine::set_delay(framecnt_t signal_delay)
 
 	if (_pending_bsiz) {
 		if (_pending_bsiz < signal_delay) {
-			cerr << "buffer resize in progress. pending: "<< _pending_bsiz <<" want: " << signal_delay <<"\n";
+			cerr << "buffer resize in progress. "<< name() << "pending: "<< _pending_bsiz <<" want: " << signal_delay <<"\n";
 		} else {
 			_pending_delay = signal_delay;
 		}
 		return;
 	}
 
-	if (_pending_buf) {
-		// TODO make _buf and _pending_buf boost::shared_ptr
-		free(_pending_buf); // housekeeping
-		_pending_buf = NULL;
-	}
-
+	_pending_buf.reset(new Sample[_configured_output.n_audio() * rbs]);
 	_pending_delay = signal_delay;
-	_pending_buf = (Sample*) calloc(_configured_output.n_audio() * rbs, sizeof(Sample));
 	_pending_bsiz = signal_delay;
 #ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
 	cerr << "allocated buffer for " << name() << " of " << signal_delay << " samples\n";
