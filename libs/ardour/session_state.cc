@@ -1500,10 +1500,7 @@ Session::XMLRouteFactory (const XMLNode& node, int version)
 		enum Route::Flag flags = Route::Flag(0);
 		const XMLProperty* prop = node.property("flags");
 		if (prop) {
-			/* XXX there must be a better way to do this */
-			if (prop->value() == "MasterOut") flags |= Route::MasterOut;
-			if (prop->value() == "MonitorOut") flags |= Route::MonitorOut;
-			if (prop->value() == "Auditioner") flags |= Route::Auditioner;
+			flags = Route::Flag (string_2_enum (prop->value(), flags));
 		}
 
 		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML"), flags));
@@ -1581,10 +1578,7 @@ Session::XMLRouteFactory_2X (const XMLNode& node, int version)
 		enum Route::Flag flags = Route::Flag(0);
 		const XMLProperty* prop = node.property("flags");
 		if (prop) {
-			/* XXX there must be a better way to do this */
-			if (prop->value() == "MasterOut") flags |= Route::MasterOut;
-			if (prop->value() == "MonitorOut") flags |= Route::MonitorOut;
-			if (prop->value() == "Auditioner") flags |= Route::Auditioner;
+			flags = Route::Flag (string_2_enum (prop->value(), flags));
 		}
 
 		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML"), flags));
