@@ -137,7 +137,6 @@ Route::init ()
 	if (!is_master() && !is_monitor() && !is_auditioner()) {
 		_delayline.reset (new DelayLine (_session, _name));
 		add_processor (_delayline, PreFader);
-		_delayline->activate();
 	}
 
 	/* add amp processor  */
@@ -4006,6 +4005,10 @@ Route::setup_invisible_processors ()
 			new_processors.insert (new_processors.end(), _monitor_send);
 			_monitor_send->set_can_pan (false);
 		}
+	}
+
+	if (!is_master() && !is_monitor() && !is_auditioner()) {
+		new_processors.push_front (_delayline);
 	}
 
 	/* MONITOR CONTROL */

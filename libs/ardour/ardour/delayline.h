@@ -37,7 +37,7 @@ public:
   DelayLine (Session& s, const std::string& name);
 	~DelayLine ();
 
-	//bool display_to_user() const { return false; } // XXX TODO
+	bool display_to_user() const { return false; }
 
 	void run (BufferSet&, framepos_t, framepos_t, pframes_t, bool);
 	void set_delay(framecnt_t signal_delay);
