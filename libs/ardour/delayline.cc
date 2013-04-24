@@ -56,7 +56,7 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 {
 	const uint32_t chn = _configured_output.n_audio();
 	pframes_t p0 = 0;
-	int c;
+	uint32_t c;
 
 	/* run() and set_delay() may be called in parallel by
 	 * different threads.
@@ -64,16 +64,48 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 	 * set_delay(), we just swap it in place
 	 */
 	if (_pending_bsiz)  {
-		int boff = _pending_bsiz - _bsiz;
+		assert(_pending_bsiz >= _bsiz);
 
+		const size_t boff = _pending_bsiz - _bsiz;
 		if (_bsiz > 0) {
-			// TODO copy/wrap buffer if it grows > (_woff-_roff)
-			memcpy(_pending_buf.get() + boff * chn, _buf.get(), sizeof(Sample) * _bsiz * chn);
+			/* write offset is retained. copy existing data to new buffer */
+			frameoffset_t wl = _bsiz - _woff;
+			memcpy(_pending_buf.get(), _buf.get(), sizeof(Sample) * _woff * chn);
+			memcpy(_pending_buf.get() + (_pending_bsiz - wl) * chn, _buf.get() + _woff * chn, sizeof(Sample) * wl * chn);
+
+			/* new buffer is all zero by default, fade into the existing data copied above */
+			frameoffset_t wo = _pending_bsiz - wl;
+			for (pframes_t pos = 0; pos < FADE_LEN; ++pos) {
+				const gain_t gain = (gain_t)pos / (gain_t)FADE_LEN;
+				for (c = 0; c < _configured_input.n_audio(); ++c) {
+					_pending_buf.get()[ wo * chn + c ] *= gain;
+					wo = (wo + 1) % (_pending_bsiz + 1);
+				}
+			}
+
+			/* read-pointer will be moved and may up anywhere..
+			 * copy current data for smooth fade-out below
+			 */
+			frameoffset_t roold = _roff;
+			frameoffset_t ro = _roff;
+			if (ro > _woff) {
+				ro += boff;
+			}
+			ro += _delay - _pending_delay;
+			if (ro < 0) {
+				ro -= (_pending_bsiz +1) * floor(ro / (float)(_pending_bsiz +1));
+			}
+			ro = ro % (_pending_bsiz + 1);
+			for (pframes_t pos = 0; pos < FADE_LEN; ++pos) {
+				for (c = 0; c < _configured_input.n_audio(); ++c) {
+					_pending_buf.get()[ ro * chn + c ] = _buf.get()[ roold * chn + c ];
+					ro = (ro + 1) % (_pending_bsiz + 1);
+					roold = (roold + 1) % (_bsiz + 1);
+				}
+			}
 		}
 
-		if (_roff > _woff ) {
-			// TODO copy/wrap buffer -- and/or postpone /fade in/
-			// apply fade to existing buffer..
+		if (_roff > _woff) {
 			_roff += boff;
 		}
 
@@ -190,6 +222,8 @@ DelayLine::set_delay(framecnt_t signal_delay)
 	}
 
 	_pending_buf.reset(new Sample[_configured_output.n_audio() * rbs]);
+	memset(_pending_buf.get(), 0, _configured_output.n_audio() * rbs * sizeof (Sample));
+
 	_pending_delay = signal_delay;
 	_pending_bsiz = signal_delay;
 #ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
