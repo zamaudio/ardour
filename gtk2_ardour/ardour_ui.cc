@@ -2111,7 +2111,7 @@ void
 ARDOUR_UI::update_clocks ()
 {
 	if (!editor || !editor->dragging_playhead()) {
-		Clock (_session->audible_frame(), false, editor->get_preferred_edit_position()); /* EMIT_SIGNAL */
+		Clock (_session->transport_frame(), false, editor->get_preferred_edit_position()); /* EMIT_SIGNAL */
 	}
 }
 
