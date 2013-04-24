@@ -1497,7 +1497,16 @@ Session::XMLRouteFactory (const XMLNode& node, int version)
                 ret = track;
 
 	} else {
-		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML")));
+		enum Route::Flag flags = Route::Flag(0);
+		const XMLProperty* prop = node.property("flags");
+		if (prop) {
+			/* XXX there must be a better way to do this */
+			if (prop->value() == "MasterOut") flags |= Route::MasterOut;
+			if (prop->value() == "MonitorOut") flags |= Route::MonitorOut;
+			if (prop->value() == "Auditioner") flags |= Route::Auditioner;
+		}
+
+		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML"), flags));
 
                 if (r->init () == 0 && r->set_state (node, version) == 0) {
 #ifdef BOOST_SP_ENABLE_DEBUG_HOOKS
@@ -1569,7 +1578,16 @@ Session::XMLRouteFactory_2X (const XMLNode& node, int version)
                 ret = track;
 
 	} else {
-		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML")));
+		enum Route::Flag flags = Route::Flag(0);
+		const XMLProperty* prop = node.property("flags");
+		if (prop) {
+			/* XXX there must be a better way to do this */
+			if (prop->value() == "MasterOut") flags |= Route::MasterOut;
+			if (prop->value() == "MonitorOut") flags |= Route::MonitorOut;
+			if (prop->value() == "Auditioner") flags |= Route::Auditioner;
+		}
+
+		boost::shared_ptr<Route> r (new Route (*this, X_("toBeResetFroXML"), flags));
 
                 if (r->init () == 0 && r->set_state (node, version) == 0) {
 #ifdef BOOST_SP_ENABLE_DEBUG_HOOKS
