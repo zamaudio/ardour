@@ -17,22 +17,19 @@
     675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-
-// TODO use PBD::DEBUG
-//#define DEBUG_LATENCY_COMPENSATION_DELAYLINE
-
 #include <assert.h>
 #include <cmath>
 
 #include "pbd/compose.h"
 
+#include "ardour/debug.h"
 #include "ardour/audio_buffer.h"
 #include "ardour/midi_buffer.h"
 #include "ardour/buffer_set.h"
 #include "ardour/delayline.h"
 
 using namespace std;
-
+using namespace PBD;
 using namespace ARDOUR;
 
 DelayLine::DelayLine (Session& s, const std::string& name)
@@ -124,15 +121,9 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 	if (_pending_delay != _delay) {
 		const pframes_t fade_len = (nsamples >= FADE_LEN) ? FADE_LEN : nsamples / 2;
 
-#ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
-		cerr << "Old " << name()
-			<< " delay: " << _delay
-			<< " bufsiz: " << _bsiz
-			<< " offset-diff: " << ((_woff - _roff + rbs) % rbs)
-			<< " write-offset: " << _woff
-			<< " read-offset:" << _roff
-			<< "\n";
-#endif
+		DEBUG_TRACE (DEBUG::LatencyCompensation,
+				string_compose ("Old %1 delay: %2 bufsiz: %3 offset-diff: %4 write-offset: %5 read-offset: %6\n",
+					name(), _delay, _bsiz, ((_woff - _roff + rbs) % rbs), _woff, _roff));
 
 		// fade out at old position
 		c = 0;
@@ -170,15 +161,10 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 		p0  = 2 * fade_len;
 
 		_delay = _pending_delay;
-#ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
-		cerr << "New " << name()
-			<< " delay: " << _delay
-			<< " bufsiz: " << _bsiz
-			<< " offset-diff: " << ((_woff - _roff + rbs) % rbs)
-			<< " write-offset: " << _woff
-			<< " read-offset:" << _roff
-			<< "\n";
-#endif
+
+		DEBUG_TRACE (DEBUG::LatencyCompensation,
+				string_compose ("New %1 delay: %2 bufsiz: %3 offset-diff: %4 write-offset: %5 read-offset: %6\n",
+					name(), _delay, _bsiz, ((_woff - _roff + rbs) % rbs), _woff, _roff));
 	}
 
 	assert(_delay == ((_woff - _roff + rbs) % rbs));
@@ -202,10 +188,11 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 void
 DelayLine::set_delay(framecnt_t signal_delay)
 {
-#ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
-	cerr << "set delay of " << name() << " to " << signal_delay << " samples for "<< _configured_output.n_audio() << " channels.\n";
-#endif
 	const framecnt_t rbs = signal_delay + 1;
+
+	DEBUG_TRACE (DEBUG::LatencyCompensation,
+			string_compose ("%1 set_delay to %2 samples for %3 channels\n",
+				name(), signal_delay, _configured_output.n_audio()));
 
 	if (signal_delay <= _bsiz) {
 		_pending_delay = signal_delay;
@@ -214,7 +201,7 @@ DelayLine::set_delay(framecnt_t signal_delay)
 
 	if (_pending_bsiz) {
 		if (_pending_bsiz < signal_delay) {
-			cerr << "buffer resize in progress. "<< name() << "pending: "<< _pending_bsiz <<" want: " << signal_delay <<"\n";
+			cerr << "LatComp: buffer resize in progress. "<< name() << "pending: "<< _pending_bsiz <<" want: " << signal_delay <<"\n"; // XXX
 		} else {
 			_pending_delay = signal_delay;
 		}
@@ -226,9 +213,10 @@ DelayLine::set_delay(framecnt_t signal_delay)
 
 	_pending_delay = signal_delay;
 	_pending_bsiz = signal_delay;
-#ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
-	cerr << "allocated buffer for " << name() << " of " << signal_delay << " samples\n";
-#endif
+
+	DEBUG_TRACE (DEBUG::LatencyCompensation,
+			string_compose ("allocated buffer for %1 of size %2\n",
+				name(), signal_delay));
 }
 
 bool
@@ -245,14 +233,9 @@ DelayLine::configure_io (ChanCount in, ChanCount out)
 		return false;
 	}
 
-#ifdef DEBUG_LATENCY_COMPENSATION_DELAYLINE
-	cerr << "configure IO: " << name()
-		<< " Ain: " << in.n_audio()
-		<< " Aout: " << out.n_audio()
-		<< " Min: " << in.n_midi()
-		<< " Mout: " << out.n_midi()
-		<< "\n";
-#endif
+	DEBUG_TRACE (DEBUG::LatencyCompensation,
+			string_compose ("configure IO: %1 Ain: %2 Aout: %3 Min: %4 Mout: %5\n",
+				name(), in.n_audio(), out.n_audio(), in.n_midi(), out.n_midi()));
 
 	return Processor::configure_io (in, out);
 }
