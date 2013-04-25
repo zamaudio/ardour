@@ -63,6 +63,7 @@
 #include "ardour/session.h"
 #include "ardour/unknown_processor.h"
 #include "ardour/utils.h"
+#include "ardour/track.h"
 
 #include "i18n.h"
 
@@ -2911,8 +2912,28 @@ Route::nonrealtime_handle_transport_stopped (bool /*abort_ignored*/, bool /*did_
 	}
 
 	_roll_delay = _initial_delay;
-	if (_delayline.get()) {
+
+	if (!_delayline.get()) {
+		return;
+	}
+
+	/* TODO: using '_initial_delay' here is not correct
+	 * for graph-nodes which do have grand-children..
+	 */
+	if (dynamic_cast<Track*>(this) == 0) {
+		/* bus */
 		_delayline.get()->set_delay(_initial_delay);
+	} else {
+		Track* self = dynamic_cast<Track*>(this);
+		switch (self->monitoring_state ()) {
+			case MonitoringInput:
+				_delayline.get()->set_delay(_initial_delay);
+			case MonitoringDisk:
+				_delayline.get()->set_delay(0);
+				break;
+			default:
+				break;
+		}
 	}
 }
 
@@ -3253,8 +3274,33 @@ Route::set_latency_compensation (framecnt_t longest_session_latency)
 	if (_session.transport_stopped()) {
 		_roll_delay = _initial_delay;
 	}
-	if (_delayline.get()) {
+
+	if (!_delayline.get() || _session.actively_recording()) {
+		return;
+	}
+
+	/* set latency compensation
+	 * see note in Route::nonrealtime_handle_transport_stopped()
+	 *
+	 * here we also hande the case of 'plugin/monitoring changed'
+	 * _roll_delay cannot be updated because we're rolling, but
+	 * the delay length can be adjusted.
+	 */
+	if (dynamic_cast<Track*>(this) == 0) {
 		_delayline.get()->set_delay(_initial_delay);
+	} else if (!_session.transport_stopped()) {
+			_delayline.get()->set_delay(_initial_delay);
+	} else {
+		Track* self = dynamic_cast<Track*>(this);
+		switch (self->monitoring_state ()) {
+			case MonitoringInput:
+				_delayline.get()->set_delay(_initial_delay);
+			case MonitoringDisk:
+				_delayline.get()->set_delay(0);
+				break;
+			default:
+				break;
+		}
 	}
 }
 
