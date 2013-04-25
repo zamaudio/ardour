@@ -241,8 +241,9 @@ DelayLine::configure_io (ChanCount in, ChanCount out)
 }
 
 void
-DelayLine::monitoring_changed()
+DelayLine::flush()
 {
+	memset(_buf.get(), 0, _configured_output.n_audio() * _bsiz * sizeof (Sample));
 }
 
 XMLNode&

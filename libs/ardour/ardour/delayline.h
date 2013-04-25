@@ -44,7 +44,11 @@ public:
 
 	bool configure_io (ChanCount in, ChanCount out);
 	bool can_support_io_configuration (const ChanCount& in, ChanCount& out) const;
-	void monitoring_changed();
+
+	void flush();
+	void realtime_handle_transport_stopped () { flush(); }
+	void realtime_locate () { flush(); }
+	void monitoring_changed() { flush(); }
 
 	XMLNode& state (bool full);
 

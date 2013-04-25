@@ -4213,6 +4213,10 @@ Route::non_realtime_locate (framepos_t pos)
 		_pannable->transport_located (pos);
 	}
 
+	if (_delayline.get()) {
+		_delayline.get()->flush();
+	}
+
 	{
 		Glib::Threads::RWLock::WriterLock lm (_processor_lock);
 		
