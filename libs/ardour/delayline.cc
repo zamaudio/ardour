@@ -40,6 +40,7 @@ DelayLine::DelayLine (Session& s, const std::string& name)
 		, _pending_bsiz(0)
 		, _roff(0)
 		, _woff(0)
+		, _pending_flush(false)
 {
 }
 
@@ -118,7 +119,7 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 	assert (_bsiz >= _pending_delay);
 	const framecnt_t rbs = _bsiz + 1;
 
-	if (_pending_delay != _delay) {
+	if (_pending_delay != _delay || _pending_flush) {
 		const pframes_t fade_len = (nsamples >= FADE_LEN) ? FADE_LEN : nsamples / 2;
 
 		DEBUG_TRACE (DEBUG::LatencyCompensation,
@@ -136,6 +137,13 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 				_roff = (_roff + 1) % rbs;
 				_woff = (_woff + 1) % rbs;
 			}
+		}
+
+		if (_pending_flush) {
+			DEBUG_TRACE (DEBUG::LatencyCompensation,
+				string_compose ("Flush buffer: %1\n", name()));
+			memset(buf, 0, _configured_output.n_audio() * rbs * sizeof (Sample));
+			_pending_flush = false;
 		}
 
 		// adjust read pointer
@@ -248,7 +256,7 @@ DelayLine::configure_io (ChanCount in, ChanCount out)
 void
 DelayLine::flush()
 {
-	memset(_buf.get(), 0, _configured_output.n_audio() * _bsiz * sizeof (Sample));
+	_pending_flush = true;
 }
 
 XMLNode&

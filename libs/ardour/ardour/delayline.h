@@ -60,6 +60,7 @@ private:
 	frameoffset_t _roff, _woff;
 	boost::shared_ptr<Sample> _buf;
 	boost::shared_ptr<Sample> _pending_buf;
+	bool _pending_flush;
 };
 
 } // namespace ARDOUR
