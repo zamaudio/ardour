@@ -1398,13 +1398,13 @@ trace_terminal (boost::shared_ptr<Route> r1, boost::shared_ptr<Route> rbase)
 
 	/* make a copy of the existing list of routes that feed r1 */
 
-	Route::FedBy existing (r1->fed_by());
+	Route::FoodChain existing (r1->food_chain());
 
 	/* for each route that feeds r1, recurse, marking it as feeding
 	   rbase as well.
 	*/
 
-	for (Route::FedBy::iterator i = existing.begin(); i != existing.end(); ++i) {
+	for (Route::FoodChain::iterator i = existing.begin(); i != existing.end(); ++i) {
 		if (!(r2 = i->r.lock ())) {
 			/* (*i) went away, ignore it */
 			continue;
@@ -1414,7 +1414,7 @@ trace_terminal (boost::shared_ptr<Route> r1, boost::shared_ptr<Route> rbase)
 		   base as being fed by r2
 		*/
 
-		rbase->add_fed_by (r2, i->sends_only);
+		rbase->add_food_chain (r2, i->sends_only);
 
 		if (r2 != rbase) {
 
@@ -1460,9 +1460,9 @@ Session::resort_routes ()
 	for (RouteList::iterator i = rl->begin(); i != rl->end(); ++i) {
 		DEBUG_TRACE (DEBUG::Graph, string_compose ("%1 fed by ...\n", (*i)->name()));
 
-		const Route::FedBy& fb ((*i)->fed_by());
+		const Route::FoodChain& fb ((*i)->food_chain());
 
-		for (Route::FedBy::const_iterator f = fb.begin(); f != fb.end(); ++f) {
+		for (Route::FoodChain::const_iterator f = fb.begin(); f != fb.end(); ++f) {
 			boost::shared_ptr<Route> sf = f->r.lock();
 			if (sf) {
 				DEBUG_TRACE (DEBUG::Graph, string_compose ("\t%1 (sends only ? %2)\n", sf->name(), f->sends_only));
@@ -1501,6 +1501,8 @@ Session::resort_routes_using (boost::shared_ptr<RouteList> r)
 	for (RouteList::iterator i = r->begin(); i != r->end(); ++i) {
 
 		/* Clear out the route's list of direct or indirect feeds */
+		(*i)->clear_food_chain ();
+		(*i)->clear_feeding ();
 		(*i)->clear_fed_by ();
 
 		for (RouteList::iterator j = r->begin(); j != r->end(); ++j) {
@@ -1514,7 +1516,12 @@ Session::resort_routes_using (boost::shared_ptr<RouteList> r)
 				/* add the edge to the graph (part #1) */
 				edges.add (*j, *i, via_sends_only);
 				/* tell the route (for part #2) */
+				(*i)->add_food_chain (*j, via_sends_only);
 				(*i)->add_fed_by (*j, via_sends_only);
+			}
+
+			if ((*i)->direct_feeds_according_to_reality (*j, &via_sends_only)) {
+				(*i)->add_feeding (*j, via_sends_only);
 			}
 		}
 	}
@@ -4675,6 +4682,7 @@ Session::set_worst_playback_latency ()
 	}
 
 	_worst_output_latency = 0;
+	_worst_session_latency = 0;
 
 	if (!_engine.connected()) {
 		return;
@@ -4683,7 +4691,12 @@ Session::set_worst_playback_latency ()
 	boost::shared_ptr<RouteList> r = routes.reader ();
 
 	for (RouteList::iterator i = r->begin(); i != r->end(); ++i) {
+		(*i)->reset_latency_graph ();
 		_worst_output_latency = max (_worst_output_latency, (*i)->output()->latency());
+	}
+
+	for (RouteList::iterator i = r->begin(); i != r->end(); ++i) {
+		_worst_session_latency = max (_worst_session_latency, (*i)->downstream_latency() + (*i)->signal_latency());
 	}
 
 	DEBUG_TRACE (DEBUG::Latency, string_compose ("Worst output latency: %1\n", _worst_output_latency));

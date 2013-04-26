@@ -380,6 +380,7 @@ class Session : public PBD::StatefulDestructible, public PBD::ScopedConnectionLi
 	framecnt_t worst_input_latency ()  const { return _worst_input_latency; }
 	framecnt_t worst_track_latency ()  const { return _worst_track_latency; }
 	framecnt_t worst_playback_latency () const { return _worst_output_latency + _worst_track_latency; }
+	framecnt_t worst_session_latency () const { return _worst_session_latency; }
 
 #ifdef HAVE_JACK_SESSION
 	void jack_session_event (jack_session_event_t* event);
@@ -915,10 +916,10 @@ class Session : public PBD::StatefulDestructible, public PBD::ScopedConnectionLi
 
 	bool                     auto_play_legal;
 	framepos_t              _last_slave_transport_frame;
-	framecnt_t               maximum_output_latency;
 	framepos_t              _requested_return_frame;
 	pframes_t                current_block_size;
 	framecnt_t              _worst_output_latency;
+	framecnt_t              _worst_session_latency;
 	framecnt_t              _worst_input_latency;
 	framecnt_t              _worst_track_latency;
 	bool                    _have_captured;

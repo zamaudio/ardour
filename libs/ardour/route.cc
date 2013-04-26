@@ -80,6 +80,8 @@ Route::Route (Session& sess, string name, Flag flg, DataType default_type)
 	, GraphNode (sess._process_graph)
 	, _active (true)
 	, _signal_latency (0)
+	, _downstream_latency (0)
+	, _upstream_latency (0)
 	, _initial_delay (0)
 	, _roll_delay (0)
 	, _flags (flg)
@@ -737,7 +739,7 @@ Route::mod_solo_by_others_upstream (int32_t delta)
 
 		if (delta > 0 || !Config->get_exclusive_solo()) {
 			DEBUG_TRACE (DEBUG::Solo, "\t ... INVERT push\n");
-			for (FedBy::iterator i = _fed_by.begin(); i != _fed_by.end(); ++i) {
+			for (FoodChain::iterator i = _food_chain.begin(); i != _food_chain.end(); ++i) {
 				boost::shared_ptr<Route> sr = i->r.lock();
 				if (sr) {
 					sr->mod_solo_by_others_downstream (-delta);
@@ -2799,6 +2801,12 @@ Route::set_comment (string cmt, void *src)
 	_session.set_dirty ();
 }
 
+void
+Route::clear_fed_by ()
+{
+	_fed_by.clear ();
+}
+
 bool
 Route::add_fed_by (boost::shared_ptr<Route> other, bool via_sends_only)
 {
@@ -2819,17 +2827,61 @@ Route::add_fed_by (boost::shared_ptr<Route> other, bool via_sends_only)
 }
 
 void
-Route::clear_fed_by ()
+Route::clear_feeding ()
 {
-	_fed_by.clear ();
+	_feeding.clear ();
+}
+
+bool
+Route::add_feeding (boost::shared_ptr<Route> other, bool via_sends_only)
+{
+	FeedRecord fr (other, via_sends_only);
+
+	pair<Feeding::iterator,bool> result =  _feeding.insert (fr);
+
+	if (!result.second) {
+
+		/* already a record for "other" - make sure sends-only information is correct */
+		if (!via_sends_only && result.first->sends_only) {
+			FeedRecord* frp = const_cast<FeedRecord*>(&(*result.first));
+			frp->sends_only = false;
+		}
+	}
+
+	return result.second;
+}
+
+void
+Route::clear_food_chain ()
+{
+	_food_chain.clear ();
+}
+
+bool
+Route::add_food_chain (boost::shared_ptr<Route> other, bool via_sends_only)
+{
+	FeedRecord fr (other, via_sends_only);
+
+	pair<FoodChain::iterator,bool> result =  _food_chain.insert (fr);
+
+	if (!result.second) {
+
+		/* already a record for "other" - make sure sends-only information is correct */
+		if (!via_sends_only && result.first->sends_only) {
+			FeedRecord* frp = const_cast<FeedRecord*>(&(*result.first));
+			frp->sends_only = false;
+		}
+	}
+
+	return result.second;
 }
 
 bool
 Route::feeds (boost::shared_ptr<Route> other, bool* via_sends_only)
 {
-	const FedBy& fed_by (other->fed_by());
+	const FoodChain& food_chain (other->food_chain());
 
-	for (FedBy::iterator f = fed_by.begin(); f != fed_by.end(); ++f) {
+	for (FedBy::iterator f = food_chain.begin(); f != food_chain.end(); ++f) {
 		boost::shared_ptr<Route> sr = f->r.lock();
 
 		if (sr && (sr.get() == this)) {
@@ -2911,15 +2963,16 @@ Route::nonrealtime_handle_transport_stopped (bool /*abort_ignored*/, bool /*did_
 		}
 	}
 
+#if 1
+	//compensate_latency(_initial_delay);
+	_roll_delay = 0;
+#else
 	_roll_delay = _initial_delay;
 
 	if (!_delayline.get()) {
 		return;
 	}
 
-	/* TODO: using '_initial_delay' here is not correct
-	 * for graph-nodes which do have grand-children..
-	 */
 	if (dynamic_cast<Track*>(this) == 0) {
 		/* bus */
 		_delayline.get()->set_delay(_initial_delay);
@@ -2935,6 +2988,7 @@ Route::nonrealtime_handle_transport_stopped (bool /*abort_ignored*/, bool /*did_
 				break;
 		}
 	}
+#endif
 }
 
 void
@@ -3251,22 +3305,140 @@ Route::set_user_latency (framecnt_t nframes)
 	_session.update_latency_compensation ();
 }
 
+framecnt_t
+Route::compensated_latency()
+{
+	if (_delayline) {
+		return (_delayline.get()->get_delay() + _roll_delay);
+	} else {
+		return _roll_delay;
+	}
+}
+
 void
-Route::set_latency_compensation (framecnt_t longest_session_latency)
+Route::compensate_latency(framecnt_t delay)
 {
 	framecnt_t old = _initial_delay;
+	_initial_delay = delay;
 
-	if (_signal_latency < longest_session_latency) {
-		_initial_delay = longest_session_latency - _signal_latency;
-	} else {
-		_initial_delay = 0;
+	if (_delayline) {
+		_delayline.get()->set_delay(delay);
+		_upstream_latency = -1;
+	}
+
+	if (_initial_delay != old) {
+		initial_delay_changed (); /* EMIT SIGNAL */
+	}
+}
+
+void
+Route::reset_latency_graph ()
+{
+	_downstream_latency = -1;
+	_upstream_latency = -1;
+}
+
+framecnt_t
+Route::downstream_latency ()
+{
+	if (_downstream_latency == -1) {
+		framecnt_t worst_dsl = 0;
+		framecnt_t max_child_latency = 0;
+
+		for (Feeding::iterator i = _feeding.begin(); i != _feeding.end(); ++i) {
+			boost::shared_ptr<Route> sr = i->r.lock();
+			if (!sr) continue;
+			worst_dsl = max(worst_dsl, sr->downstream_latency());
+			max_child_latency = max(max_child_latency, sr->signal_latency());
+		}
+
+		_downstream_latency = max_child_latency + worst_dsl;
+	}
+	return _downstream_latency;
+}
+
+framecnt_t
+Route::upstream_latency ()
+{
+	if (1 || _upstream_latency == -1) {
+		framecnt_t worst_usl = 0;
+		framecnt_t max_parent_latency = 0;
+
+		for (FedBy::iterator i = _fed_by.begin(); i != _fed_by.end(); ++i) {
+			boost::shared_ptr<Route> sr = i->r.lock();
+			if (!sr) continue;
+			worst_usl = max(worst_usl, sr->upstream_latency());
+			max_parent_latency = max(max_parent_latency, sr->signal_latency() + sr->compensated_latency());
+		}
+
+		_upstream_latency = max_parent_latency + worst_usl;
+	}
+	return _upstream_latency;
+}
+
+framecnt_t
+Route::calculate_latency_compensation ()
+{
+	bool is_terminal = true;
+	framecnt_t max_child_latency = 0;
+
+	cerr << "Route " << name() << " :\n";
+	/* find max latency of all children */
+	for (Feeding::iterator i = _feeding.begin(); i != _feeding.end(); ++i) {
+		boost::shared_ptr<Route> sr = i->r.lock();
+		if (!sr) continue;
+		cerr << " -> " << sr->name();
+		if (sr->delay_line()) {
+			cerr << " * " << sr->signal_latency();
+			is_terminal = false;
+		}
+		max_child_latency = max(max_child_latency, sr->signal_latency());
+		cerr << "\n";
+	}
+
+	/* balance latency of direct children
+	 *
+	 * this function depends on a sorted graph
+	 * ie. signal sources are processed first.
+	 * terminan nodes last.
+	 */
+	for (Feeding::iterator i = _feeding.begin(); i != _feeding.end(); ++i) {
+		boost::shared_ptr<Route> sr = i->r.lock();
+		if (!sr) continue;
+		sr->compensate_latency(max_child_latency - sr->signal_latency());
+	}
+
+	if (is_terminal) {
+		const framecnt_t latency_so_far = upstream_latency();
+		cerr << " worst: " << _session.worst_session_latency() << " self: " << _signal_latency << " parents: " << latency_so_far << "\n";
+		return (_session.worst_session_latency() - _signal_latency - latency_so_far);
+		//compensate_latency(_session.worst_session_latency() - _signal_latency - latency_so_far);
+	}
+
+	return -1;
+}
+
+void
+Route::set_latency_compensation (framecnt_t /* longest_session_latency*/)
+{
+	framecnt_t old = _initial_delay;
+	framecnt_t lat = calculate_latency_compensation();
+
+	if (lat >= 0) {
+		_initial_delay = lat;
 	}
 
 	DEBUG_TRACE (DEBUG::Latency, string_compose (
 		             "%1: compensate for maximum latency of %2,"
 		             "given own latency of %3, using initial delay of %4\n",
-		             name(), longest_session_latency, _signal_latency, _initial_delay));
+		             name(), _session.worst_session_latency(), _signal_latency, _initial_delay));
 
+#if 1
+	compensate_latency(_initial_delay);
+	if (_session.transport_stopped()) {
+		_roll_delay = 0;
+	}
+#else
 	if (_initial_delay != old) {
 		initial_delay_changed (); /* EMIT SIGNAL */
 	}
@@ -3274,6 +3446,7 @@ Route::set_latency_compensation (framecnt_t longest_session_latency)
 	if (_session.transport_stopped()) {
 		_roll_delay = _initial_delay;
 	}
+
 
 	if (!_delayline.get() || _session.actively_recording()) {
 		return;
@@ -3302,6 +3475,7 @@ Route::set_latency_compensation (framecnt_t longest_session_latency)
 				break;
 		}
 	}
+#endif
 }
 
 Route::SoloControllable::SoloControllable (std::string name, boost::shared_ptr<Route> r)

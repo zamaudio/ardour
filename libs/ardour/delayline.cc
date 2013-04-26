@@ -188,6 +188,11 @@ DelayLine::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, p
 void
 DelayLine::set_delay(framecnt_t signal_delay)
 {
+	if (signal_delay < 0) {
+		signal_delay = 0;
+		cerr << "WARNING: latency compensation is not possible.\n";
+	}
+
 	const framecnt_t rbs = signal_delay + 1;
 
 	DEBUG_TRACE (DEBUG::LatencyCompensation,

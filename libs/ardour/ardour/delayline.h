@@ -41,6 +41,7 @@ public:
 
 	void run (BufferSet&, framepos_t, framepos_t, pframes_t, bool);
 	void set_delay(framecnt_t signal_delay);
+	framecnt_t get_delay() { return _pending_delay; }
 
 	bool configure_io (ChanCount in, ChanCount out);
 	bool can_support_io_configuration (const ChanCount& in, ChanCount& out) const;
