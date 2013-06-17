@@ -7,18 +7,11 @@ import string
 import subprocess
 import sys
 
-#
-# build scripts need to find the right platform specific version
-# 
+MAJOR = '3'
+MINOR = '2'
+VERSION = MAJOR + '.' + MINOR
 
-if sys.platform == 'darwin':
-    OSX_VERSION = '3.0beta6'
-    VERSION = '3.0beta6'
-else:
-    LINUX_VERSION = '3.1'
-    VERSION = '3.1'
-
-APPNAME = 'Ardour3'
+APPNAME = 'Ardour' + MAJOR
 
 # Mandatory variables
 top = '.'
@@ -115,12 +108,14 @@ def set_compiler_flags (conf,opt):
     platform = u[0].lower()
     version = u[2]
 
+    # waf adds -O0 -g itself. thanks waf!
     is_clang = conf.env['CXX'][0].endswith('clang++')
     if opt.gprofile:
         debug_flags = [ '-pg' ]
-    else:
+
+    if opt.backtrace:
         if platform != 'darwin' and not is_clang:
-            debug_flags = [ '-rdynamic' ] # waf adds -O0 -g itself. thanks waf!
+            debug_flags = [ '-rdynamic' ]
 
     # Autodetect
     if opt.dist_target == 'auto':
@@ -386,6 +381,8 @@ def options(opt):
                     help='The user-visible name of the program being built')
     opt.add_option('--arch', type='string', action='store', dest='arch',
                     help='Architecture-specific compiler flags')
+    opt.add_option('--backtrace', action='store_true', default=False, dest='backtrace',
+                    help='Compile with -rdynamic -- allow obtaining backtraces from within Ardour')
     opt.add_option('--no-carbon', action='store_true', default=False, dest='nocarbon',
                     help='Compile without support for AU Plugins with only CARBON UI (needed for 64bit)')
     opt.add_option('--boost-sp-debug', action='store_true', default=False, dest='boost_sp_debug',
@@ -466,6 +463,8 @@ def configure(conf):
     conf.load('compiler_c')
     conf.load('compiler_cxx')
     conf.env['VERSION'] = VERSION
+    conf.env['MAJOR'] = MAJOR
+    conf.env['MINOR'] = MINOR
     conf.line_just = 52
     autowaf.set_recursive()
     autowaf.configure(conf)
@@ -514,6 +513,10 @@ def configure(conf):
     else:
         autowaf.display_msg(conf, 'Will build against private Ardour dependency stack', 'no')
         
+    if Options.options.freebie:
+        conf.env.append_value ('CFLAGS', '-DNO_PLUGIN_STATE')
+        conf.env.append_value ('CXXFLAGS', '-DNO_PLUGIN_STATE')
+
     if sys.platform == 'darwin':
 
         # this is required, potentially, for anything we link and then relocate into a bundle
@@ -521,9 +524,6 @@ def configure(conf):
 
         conf.define ('HAVE_COREAUDIO', 1)
         conf.define ('AUDIOUNIT_SUPPORT', 1)
-
-        if not Options.options.freebie:
-            conf.define ('AU_STATE_SUPPORT', 1)
 
         conf.define ('GTKOSX', 1)
         conf.define ('TOP_MENUBAR',1)
@@ -564,7 +564,7 @@ def configure(conf):
         conf.env.append_value('LINKFLAGS_AUDIOUNITS', ['-framework', 'Cocoa'])
 
         if not Options.options.freebie:
-            conf.env.append_value('CXXFLAGS_AUDIOUNITS', "-DAU_STATE_SUPPORT")
+            conf.env.append_value('CXXFLAGS_AUDIOUNITS')
 
         if re.search ("^[1-9][0-9]\.", os.uname()[2]) == None and not Options.options.nocarbon:
             conf.env.append_value('CXXFLAGS_AUDIOUNITS', "-DWITH_CARBON")
@@ -677,6 +677,7 @@ const char* const ardour_config_info = "\\n\\
 
     write_config_text('Build documentation',   conf.env['DOCS'])
     write_config_text('Debuggable build',      conf.env['DEBUG'])
+    write_config_text('Export all symbols (backtrace)', opts.backtrace)
     write_config_text('Install prefix',        conf.env['PREFIX'])
     write_config_text('Strict compiler flags', conf.env['STRICT'])
     write_config_text('Internal Shared Libraries', conf.is_defined('INTERNAL_SHARED_LIBS'))

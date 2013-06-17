@@ -28,15 +28,21 @@ namespace GTK {
 
 namespace Gtkmm2ext {
 
-class VisibilityTracker {
+class VisibilityTracker : public virtual sigc::trackable {
   public:
     VisibilityTracker (Gtk::Window&);
     virtual ~VisibilityTracker() {}
     
     void cycle_visibility ();
 
+    bool fully_visible() const;
+    bool not_visible() const;
+    bool partially_visible() const;
+
+    Gtk::Window& window () const { return _window; }
+
   private:
-    Gtk::Window& window;
+    Gtk::Window& _window;
     GdkVisibilityState _visibility;
     bool handle_visibility_notify_event (GdkEventVisibility*);
 };
