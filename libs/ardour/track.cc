@@ -535,6 +535,7 @@ void
 Track::set_capture_offset ()
 {
 	_diskstream->set_capture_offset ();
+	_diskstream->set_upstream_latency (upstream_latency());
 }
 
 list<boost::shared_ptr<Source> >

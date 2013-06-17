@@ -72,6 +72,8 @@ Send::name_and_id_new_send (Session& s, Role r, uint32_t& bitslot)
 Send::Send (Session& s, boost::shared_ptr<Pannable> p, boost::shared_ptr<MuteMaster> mm, Role r)
 	: Delivery (s, p, mm, name_and_id_new_send (s, r, _bitslot), r)
 	, _metering (false)
+	, _delay_in (0)
+	, _delay_out (0)
 {
 	if (_role == Listen) {
 		/* we don't need to do this but it keeps things looking clean
@@ -84,6 +86,14 @@ Send::Send (Session& s, boost::shared_ptr<Pannable> p, boost::shared_ptr<MuteMas
 
 	_amp.reset (new Amp (_session));
 	_meter.reset (new PeakMeter (_session, name()));
+
+#if 1
+	_delayline.reset (new DelayLine (_session, name()));
+#else
+	if (r == Delivery::Aux || r == Insert) {
+		_delayline.reset (new DelayLine (_session, name()));
+	}
+#endif
 
 	add_control (_amp->gain_control ());
 }
@@ -110,6 +120,30 @@ Send::deactivate ()
 	_meter->reset ();
 
 	Processor::deactivate ();
+}
+
+void
+Send::set_delay_in(framecnt_t delay)
+{
+	if (!_delayline) return;
+	if (_delay_in == delay) {
+		return;
+	}
+	_delay_in = delay;
+	cerr << "SEND DELAY Pre: " <<  delay << "\n";
+	_delayline.get()->set_delay(_delay_out + _delay_in);
+}
+
+void
+Send::set_delay_out(framecnt_t delay)
+{
+	if (!_delayline) return;
+	if (_delay_out == delay) {
+		return;
+	}
+	_delay_out = delay;
+	cerr << "SEND DELAY Post: " <<  delay << "\n";
+	_delayline.get()->set_delay(_delay_out + _delay_in);
 }
 
 void
@@ -140,6 +174,8 @@ Send::run (BufferSet& bufs, framepos_t start_frame, framepos_t end_frame, pframe
 	_amp->set_gain_automation_buffer (_session.send_gain_automation_buffer ());
 	_amp->setup_gain_automation (start_frame, end_frame, nframes);
 	_amp->run (sendbufs, start_frame, end_frame, nframes, true);
+
+	_delayline->run (sendbufs, start_frame, end_frame, nframes, true);
 
 	/* deliver to outputs */
 
@@ -202,6 +238,9 @@ Send::set_state (const XMLNode& node, int version)
 		if ((prop = node.property ("bitslot")) == 0) {
 			if (_role == Delivery::Aux) {
 				_bitslot = _session.next_aux_send_id ();
+#if 0
+				_delayline.reset (new DelayLine (_session, name()));
+#endif
 			} else if (_role == Delivery::Send) {
 				_bitslot = _session.next_send_id ();
 			} else {
@@ -213,6 +252,9 @@ Send::set_state (const XMLNode& node, int version)
 				_session.unmark_aux_send_id (_bitslot);
 				sscanf (prop->value().c_str(), "%" PRIu32, &_bitslot);
 				_session.mark_aux_send_id (_bitslot);
+#if 0
+				_delayline.reset (new DelayLine (_session, name()));
+#endif
 			} else if (_role == Delivery::Send) {
 				_session.unmark_send_id (_bitslot);
 				sscanf (prop->value().c_str(), "%" PRIu32, &_bitslot);
@@ -289,6 +331,11 @@ Send::configure_io (ChanCount in, ChanCount out)
 	}
 
 	if (!Processor::configure_io (in, out)) {
+		return false;
+	}
+
+	if (_delayline && !_delayline->configure_io(in, out)) {
+		cerr << "send delayline config failed\n";
 		return false;
 	}
 

@@ -91,6 +91,8 @@ class Diskstream : public SessionObject, public PublicDiskstream
 	framecnt_t roll_delay() const { return _roll_delay; }
 	void       set_roll_delay (framecnt_t);
 
+	void       set_upstream_latency (framecnt_t);
+
 	bool         record_enabled() const { return g_atomic_int_get (&_record_enabled); }
 	virtual void set_record_enabled (bool yn) = 0;
 
@@ -284,6 +286,7 @@ class Diskstream : public SessionObject, public PublicDiskstream
 	    with respect to the transport frame.  This is used for latency compensation.
 	*/
 	framecnt_t   _roll_delay;
+	framecnt_t   _upstream_latency;
 	framepos_t    first_recordable_frame;
 	framepos_t    last_recordable_frame;
 	int           last_possibly_recording;

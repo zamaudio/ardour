@@ -246,6 +246,8 @@ DelayLine::configure_io (ChanCount in, ChanCount out)
 		return false;
 	}
 
+	// TODO realloc buffers if channel count changes..
+
 	DEBUG_TRACE (DEBUG::LatencyCompensation,
 			string_compose ("configure IO: %1 Ain: %2 Aout: %3 Min: %4 Mout: %5\n",
 				name(), in.n_audio(), out.n_audio(), in.n_midi(), out.n_midi()));
