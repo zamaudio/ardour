@@ -11,6 +11,10 @@
 
 class XMLNode;
 
+namespace Gtk {
+  class Widget;
+}
+
 namespace Gtkmm2ext {
 
 class KeyboardKey
@@ -81,13 +85,28 @@ class ActionMap {
                                                          sigc::slot<void,GtkAction*> sl,
                                                          int value);
 	Glib::RefPtr<Gtk::Action> register_toggle_action (const char*path,
-							  const char* name, const char* label, sigc::slot<void> sl);
+							  const char* name, const char* label,
+							  sigc::slot<void> sl);
 
         Glib::RefPtr<Gtk::Action> find_action (const std::string& name);
+
+	/* this uses the GtkUIManager (and in the future, GtkBuilder) to get a
+	   widget (typically a MenuItem) that was constructed automatically
+	   when building menus dynamically from lists of actions.
+	*/
+	Gtk::Widget* get_widget (const std::string& name);
+
+	void do_action (const std::string& name);
+	void check_toggleaction (const std::string& name);
+	void uncheck_toggleaction (const std::string& name);
+
+	static void set_sensitive (std::vector<Glib::RefPtr<Gtk::Action> >& actions, bool);
 
   private:
         typedef std::map<std::string, Glib::RefPtr<Gtk::Action> > _ActionMap;
         _ActionMap actions;
+
+	void set_toggleaction_state (const std::string&, bool);
 };        
 
 class Bindings {
@@ -100,12 +119,8 @@ class Bindings {
         Bindings();
         ~Bindings ();
 
-        void add (KeyboardKey, Operation, Glib::RefPtr<Gtk::Action>);
-        void remove (KeyboardKey, Operation);
+	bool bind (const std::string&, KeyboardKey new_binding, Operation op = press);
         bool activate (KeyboardKey, Operation);
-
-        void add (MouseButton, Operation, Glib::RefPtr<Gtk::Action>);
-        void remove (MouseButton, Operation);
         bool activate (MouseButton, Operation);
 
         bool load (const std::string& path);
@@ -118,6 +133,7 @@ class Bindings {
         static void set_ignored_state (int mask) {
                 _ignored_state = mask;
         }
+
         static uint32_t ignored_state() { return _ignored_state; }
 
   private:
@@ -126,9 +142,15 @@ class Bindings {
         KeybindingMap press_bindings;
         KeybindingMap release_bindings;
 
+        void add (KeyboardKey, Operation, Glib::RefPtr<Gtk::Action>);
+        void remove (KeyboardKey, Operation);
+
         typedef std::map<MouseButton,Glib::RefPtr<Gtk::Action> > MouseButtonBindingMap;
         MouseButtonBindingMap button_press_bindings;
         MouseButtonBindingMap button_release_bindings;
+
+        void add (MouseButton, Operation, Glib::RefPtr<Gtk::Action>);
+        void remove (MouseButton, Operation);
 
         ActionMap* action_map;
         static uint32_t _ignored_state;

@@ -35,19 +35,13 @@ using namespace Gtkmm2ext;
 
 uint32_t Bindings::_ignored_state = 0;
 
-MouseButton::MouseButton (uint32_t state, uint32_t keycode)
+MouseButton::MouseButton (uint32_t state, uint32_t button_id)
 {
         uint32_t ignore = Bindings::ignored_state();
         
-        if (gdk_keyval_is_upper (keycode) && gdk_keyval_is_lower (keycode)) {
-                /* key is not subject to case, so ignore SHIFT
-                 */
-                ignore |= GDK_SHIFT_MASK;
-        }
-
         _val = (state & ~ignore);
         _val <<= 32;
-        _val |= keycode;
+        _val |= button_id;
 };
 
 bool
@@ -306,6 +300,41 @@ Bindings::remove (KeyboardKey kb, Operation op)
         }
 }
 
+void
+Bindings::bind (const std::string& name, KeyboardKey new_binding, Operation op)
+{
+  Operation old_op;
+
+  Glib::RefPtr<Action> action = action_map->find_action (name);
+
+  if (action) {
+    bool removed = false;
+
+    for (KeyBindingMap::iterator i = press_bindings.begin(); i != press_bindings.end(); ++i) {
+      if (i->second == action) {
+	press_bindings.erase (i);
+	removed = true;
+	break;
+      }
+    }
+
+    if (!removed) {
+      for (KeyBindingMap::iterator i = release_bindings.begin(); i != release_bindings.end(); ++i) {
+	if (i->second == action) {
+	  release_bindings.erase (i);
+	  break;
+	}
+      }
+    }
+
+    add (new_binding, op, action);
+
+    return true;
+  }
+
+  return false;
+}
+
 bool
 Bindings::activate (MouseButton bb, Operation op)
 {
@@ -490,9 +519,9 @@ Bindings::load (const XMLNode& node)
                         XMLProperty* kp;
                         XMLProperty* bp;
                         
-                        ap = (*p)->property ("action");
-                        kp = (*p)->property ("key");
-                        bp = (*p)->property ("button");
+                        ap = (*p)->property (X_("action"));
+                        kp = (*p)->property (X_("key"));
+                        bp = (*p)->property (X_("button"));
                         
                         if (!ap || (!kp && !bp)) {
                                 continue;
@@ -519,7 +548,7 @@ Bindings::load (const XMLNode& node)
                         
                         if (kp) {
                                 KeyboardKey k;
-                                if (!KeyboardKey::make_key (kp->value(), k)) {
+`                                if (!KeyboardKey::make_key (kp->value(), k)) {
                                         continue;
                                 }
                                 add (k, op, act);
@@ -533,6 +562,22 @@ Bindings::load (const XMLNode& node)
                 }
         }
 }        
+
+string
+Bindings::get_key_representation (const string& action, AccelKey& key)
+{
+	bool known = lookup_entry (accel_path, key);
+	
+	if (known) {
+		uint32_t k = possibly_translate_legal_accelerator_to_real_key (key.get_key());
+		key = AccelKey (k, Gdk::ModifierType (key.get_mod()));
+		/* use global accel group */
+		return ui_manager->get_accel_group()->get_label (key.get_key(), Gdk::ModifierType (key.get_mod()));
+	} 
+	
+	return unbound_string;
+}
+
 
 RefPtr<Action>
 ActionMap::find_action (const string& name)
@@ -603,3 +648,53 @@ ActionMap::register_toggle_action (const char* path,
         actions.insert (_ActionMap::value_type (fullpath, act));
         return act;
 }
+
+Gtk::Widget* 
+ActionMap::get_widget (const std::string& name)
+{
+  //return ui_manager->get_widget (name);
+  return 0;
+}
+
+void 
+ActionMap::do_action (const std::string& name)
+{
+  RefPtr<Action> act -= find_action (name);
+  if (act) {
+    act->activate ();
+  }
+}
+
+void 
+ActionMap::check_toggleaction (const std::string& name)
+{
+  set_toggleaction_state (true);
+}
+
+void
+ActionMap::uncheck_toggleaction (const std::string& name)
+{
+  set_toggleaction_state (false);
+}
+
+void
+ActionMap::set_toggleaction_state (const std::string& n, bool s)
+{
+        RefPtr<Action> act = find_action (name);
+
+	if (act) {
+	        RefPtr<ToggleAction> tact = RefPtr<ToggleAction>::cast_dynamic(act);
+       		tact->set_active (s);
+	} else {
+		error << string_compose (_("Unknown action name: %1"),  name) << endmsg;
+	}
+}
+
+void 
+ActionMap::set_sensitive (std::vector<Glib::RefPtr<Gtk::Action> >& actions, bool)
+{
+	for (vector<RefPtr<Action> >::iterator i = actions.begin(); i != actions.end(); ++i) {
+		(*i)->set_sensitive (state);
+	}
+}
+
