@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <gdk/gdkkeysyms.h>
 #include <gtkmm/action.h>
-#include <gtkmm/action.h>
+#include <gtkmm/accelkey.h>
 #include <gtkmm/radioaction.h>
 #include <gtkmm/toggleaction.h>
 
@@ -119,7 +119,7 @@ class Bindings {
         Bindings();
         ~Bindings ();
 
-	bool bind (const std::string&, KeyboardKey new_binding, Operation op = press);
+	bool bind (const std::string&, KeyboardKey new_binding, Operation op = Press);
         bool activate (KeyboardKey, Operation);
         bool activate (MouseButton, Operation);
 
@@ -128,6 +128,8 @@ class Bindings {
         bool save (const std::string& path);
         void save (XMLNode& root);
         
+        std::string get_key_representation (const std::string& action, Gtk::AccelKey& key);
+
         void set_action_map (ActionMap&);
 
         static void set_ignored_state (int mask) {
@@ -135,6 +137,8 @@ class Bindings {
         }
 
         static uint32_t ignored_state() { return _ignored_state; }
+
+        static std::string unbound_string() { return _unbound_string; }
 
   private:
         typedef std::map<KeyboardKey,Glib::RefPtr<Gtk::Action> > KeybindingMap;
@@ -154,6 +158,7 @@ class Bindings {
 
         ActionMap* action_map;
         static uint32_t _ignored_state;
+        static std::string _unbound_string;
 };
 
 } // namespace

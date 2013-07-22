@@ -21,6 +21,7 @@
 
 #include "pbd/xml++.h"
 #include "pbd/convert.h"
+#include "pbd/error.h"
 
 #include "gtkmm2ext/actions.h"
 #include "gtkmm2ext/bindings.h"
@@ -30,10 +31,12 @@
 
 using namespace std;
 using namespace Glib;
+using namespace PBD;
 using namespace Gtk;
 using namespace Gtkmm2ext;
 
 uint32_t Bindings::_ignored_state = 0;
+string Bindings::_unbound_string = X_("--");
 
 MouseButton::MouseButton (uint32_t state, uint32_t button_id)
 {
@@ -300,39 +303,37 @@ Bindings::remove (KeyboardKey kb, Operation op)
         }
 }
 
-void
+bool
 Bindings::bind (const std::string& name, KeyboardKey new_binding, Operation op)
 {
-  Operation old_op;
-
-  Glib::RefPtr<Action> action = action_map->find_action (name);
-
-  if (action) {
-    bool removed = false;
-
-    for (KeyBindingMap::iterator i = press_bindings.begin(); i != press_bindings.end(); ++i) {
-      if (i->second == action) {
-	press_bindings.erase (i);
-	removed = true;
-	break;
-      }
-    }
-
-    if (!removed) {
-      for (KeyBindingMap::iterator i = release_bindings.begin(); i != release_bindings.end(); ++i) {
-	if (i->second == action) {
-	  release_bindings.erase (i);
-	  break;
+	Glib::RefPtr<Action> action = action_map->find_action (name);
+	
+	if (action) {
+		bool removed = false;
+		
+		for (KeybindingMap::iterator i = press_bindings.begin(); i != press_bindings.end(); ++i) {
+			if (i->second == action) {
+				press_bindings.erase (i);
+				removed = true;
+				break;
+			}
+		}
+		
+		if (!removed) {
+			for (KeybindingMap::iterator i = release_bindings.begin(); i != release_bindings.end(); ++i) {
+				if (i->second == action) {
+					release_bindings.erase (i);
+					break;
+				}
+			}
+		}
+		
+		add (new_binding, op, action);
+		
+		return true;
 	}
-      }
-    }
-
-    add (new_binding, op, action);
-
-    return true;
-  }
-
-  return false;
+	
+	return false;
 }
 
 bool
@@ -548,7 +549,7 @@ Bindings::load (const XMLNode& node)
                         
                         if (kp) {
                                 KeyboardKey k;
-`                                if (!KeyboardKey::make_key (kp->value(), k)) {
+                                if (!KeyboardKey::make_key (kp->value(), k)) {
                                         continue;
                                 }
                                 add (k, op, act);
@@ -566,16 +567,28 @@ Bindings::load (const XMLNode& node)
 string
 Bindings::get_key_representation (const string& action, AccelKey& key)
 {
-	bool known = lookup_entry (accel_path, key);
+	if (!action_map) {
+		return unbound_string();
+	}
+
+	Glib::RefPtr<Action> act = action_map->find_action (action);
+
+	if (!act) {
+		return unbound_string();
+	}
+
+	for (KeybindingMap::iterator i = press_bindings.begin(); i != press_bindings.end(); ++i) {
+		if (i->second == act) {
+
+			KeyboardKey k = i->first;
+			key = AccelKey (k.key(), Gdk::ModifierType (k.state()));
+			/* use global accel group */
+			// return ui_manager->get_accel_group()->get_label (key.get_key(), Gdk::ModifierType (key.get_mod()));
+			return unbound_string();
+		} 
+	}
 	
-	if (known) {
-		uint32_t k = possibly_translate_legal_accelerator_to_real_key (key.get_key());
-		key = AccelKey (k, Gdk::ModifierType (key.get_mod()));
-		/* use global accel group */
-		return ui_manager->get_accel_group()->get_label (key.get_key(), Gdk::ModifierType (key.get_mod()));
-	} 
-	
-	return unbound_string;
+	return unbound_string();
 }
 
 
@@ -650,48 +663,48 @@ ActionMap::register_toggle_action (const char* path,
 }
 
 Gtk::Widget* 
-ActionMap::get_widget (const std::string& name)
+ActionMap::get_widget (const std::string& /*name*/)
 {
-  //return ui_manager->get_widget (name);
-  return 0;
+	//return ui_manager->get_widget (name);
+	return 0;
 }
 
 void 
 ActionMap::do_action (const std::string& name)
 {
-  RefPtr<Action> act -= find_action (name);
-  if (act) {
-    act->activate ();
-  }
+	RefPtr<Action> act = find_action (name);
+	if (act) {
+		act->activate ();
+	}
 }
 
 void 
 ActionMap::check_toggleaction (const std::string& name)
 {
-  set_toggleaction_state (true);
+	set_toggleaction_state (name, true);
 }
 
 void
 ActionMap::uncheck_toggleaction (const std::string& name)
 {
-  set_toggleaction_state (false);
+	set_toggleaction_state (name, false);
 }
 
 void
 ActionMap::set_toggleaction_state (const std::string& n, bool s)
 {
-        RefPtr<Action> act = find_action (name);
+        RefPtr<Action> act = find_action (n);
 
 	if (act) {
 	        RefPtr<ToggleAction> tact = RefPtr<ToggleAction>::cast_dynamic(act);
        		tact->set_active (s);
 	} else {
-		error << string_compose (_("Unknown action name: %1"),  name) << endmsg;
+		error << string_compose (_("Unknown action name: %1"),  n) << endmsg;
 	}
 }
 
 void 
-ActionMap::set_sensitive (std::vector<Glib::RefPtr<Gtk::Action> >& actions, bool)
+ActionMap::set_sensitive (std::vector<Glib::RefPtr<Gtk::Action> >& actions, bool state)
 {
 	for (vector<RefPtr<Action> >::iterator i = actions.begin(); i != actions.end(); ++i) {
 		(*i)->set_sensitive (state);
