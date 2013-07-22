@@ -805,7 +805,15 @@ ArdourStartup::setup_new_session_page ()
 			string::size_type last_dir_sep = session_parent_dir.rfind(G_DIR_SEPARATOR);
 			session_parent_dir = session_parent_dir.substr(0, last_dir_sep);
 			new_folder_chooser.set_current_folder (session_parent_dir);
-			new_folder_chooser.add_shortcut_folder (poor_mans_glob (Config->get_default_session_parent_dir()));
+			string default_session_folder = poor_mans_glob (Config->get_default_session_parent_dir());
+
+			try {
+				/* add_shortcut_folder throws an exception if the folder being added already has a shortcut */
+				new_folder_chooser.add_shortcut_folder (default_session_folder);
+			}
+			catch (Glib::Error & e) {
+				std::cerr << "new_folder_chooser.add_shortcut_folder (" << default_session_folder << ") threw Glib::Error " << e.what() << std::endl;
+			}
 		} else {
 			new_folder_chooser.set_current_folder (poor_mans_glob (Config->get_default_session_parent_dir()));
 		}
@@ -917,6 +925,7 @@ ArdourStartup::setup_new_session_page ()
 	if (more_new_session_options_button.get_active()) {
 		set_page_type (session_vbox, ASSISTANT_PAGE_CONTENT);
 	}
+	session_hbox.show_all();
 }
 
 void
@@ -1092,6 +1101,7 @@ ArdourStartup::setup_existing_session_page ()
 
 	set_page_title (session_vbox, _("Select a session"));
 	set_page_type (session_vbox, ASSISTANT_PAGE_CONFIRM);
+	session_hbox.show_all();
 }
 
 void
