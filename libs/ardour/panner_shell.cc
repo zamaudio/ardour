@@ -117,7 +117,7 @@ PannerShell::configure_io (ChanCount in, ChanCount out)
 		return;
 	}
 
-	PannerInfo* pi = PannerManager::instance().select_panner (in, out, _user_selected_panner_uri);
+	PannerInfo* pi = PannerManager::instance().select_panner (in, out, _session.config.get_use_delay_panners(), _user_selected_panner_uri);
 	if (!pi) {
 		cerr << "No panner found: check that panners are being discovered correctly during startup.\n";
 		assert (pi);
@@ -437,6 +437,20 @@ PannerShell::select_panner_by_uri (std::string const uri)
 	if (uri == _user_selected_panner_uri) return false;
 	_user_selected_panner_uri = uri;
 	if (uri == _current_panner_uri) return false;
+	reselect_panner();
+	return true;
+}
+
+void
+PannerShell::select_default_panner ()
+{
+	_user_selected_panner_uri.clear();
+	reselect_panner();
+}
+
+void
+PannerShell::reselect_panner ()
+{
 	_force_reselect = true;
 	if (_panner) {
 		Glib::Threads::Mutex::Lock lx (AudioEngine::instance()->process_lock ());
@@ -448,7 +462,6 @@ PannerShell::select_panner_by_uri (std::string const uri)
 			}
 			_session.set_dirty ();
 	}
-	return true;
 }
 
 void

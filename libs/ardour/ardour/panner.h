@@ -170,6 +170,8 @@ protected:
 	                                       pan_t** buffers, uint32_t which) = 0;
 
         int32_t _frozen;
+
+        static const float _pan_law_scale = 2.0f - 4.0f * M_SQRT1_2; /* -3 dB */
 };
 
 } // namespace
@@ -183,6 +185,8 @@ struct PanPluginDescriptor {
 	int32_t out;
 	uint32_t priority;
 	ARDOUR::Panner* (*factory)(boost::shared_ptr<ARDOUR::Pannable>, boost::shared_ptr<ARDOUR::Speakers>);
+
+	static const uint32_t priority_delay_flag = 0x80000000;
 };
 }
 

@@ -83,10 +83,12 @@ public:
 
 	/* this function takes the process lock: */
 	bool select_panner_by_uri (std::string const uri);
+	void select_default_panner ();
 
   private:
 	void distribute_no_automation (BufferSet& src, BufferSet& dest, pframes_t nframes, gain_t gain_coeff);
 	bool set_user_selected_panner_uri (std::string const uri);
+	void reselect_panner ();
 
 	boost::shared_ptr<Panner> _panner;
 

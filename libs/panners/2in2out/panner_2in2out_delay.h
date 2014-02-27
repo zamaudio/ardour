@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2000-2010 Paul Davis
+    Copyright (C) 2014 Sebastian Reichelt
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,27 +17,22 @@
 
 */
 
-#include "option_editor.h"
+#ifndef __ardour_panner_2in2out_delay_h__
+#define __ardour_panner_2in2out_delay_h__
+
+#include "panner_2in2out.h"
 
 namespace ARDOUR {
-	class Session;
-	class SessionConfiguration;
-}
 
-class SessionOptionEditor : public OptionEditor
+class Panner2in2outDelay : public Panner2in2out
 {
-public:
-	SessionOptionEditor (ARDOUR::Session* s);
+  public:
+	Panner2in2outDelay (boost::shared_ptr<Pannable>);
+	~Panner2in2outDelay ();
 
-private:
-	void parameter_changed (std::string const &);
-
-	ARDOUR::SessionConfiguration* _session_config;
-
-	bool set_use_monitor_section (bool);
-	bool get_use_monitor_section ();
-
-	bool set_use_delay_panners (bool);
-
-	ComboOption<float>* _vpu;
+        static Panner* factory (boost::shared_ptr<Pannable>, boost::shared_ptr<Speakers>);
 };
+
+} // namespace
+
+#endif /* __ardour_panner_2in2out_delay_h__ */

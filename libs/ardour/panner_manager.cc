@@ -144,7 +144,7 @@ PannerManager::get_descriptor (string path)
 }
 
 PannerInfo*
-PannerManager::select_panner (ChanCount in, ChanCount out, std::string const uri)
+PannerManager::select_panner (ChanCount in, ChanCount out, bool use_delay_panners, std::string const uri)
 {
 	PannerInfo* rv = NULL;
 	PanPluginDescriptor* d;
@@ -166,6 +166,9 @@ PannerManager::select_panner (ChanCount in, ChanCount out, std::string const uri
 	for (list<PannerInfo*>::iterator p = panner_info.begin(); p != panner_info.end(); ++p) {
 		d = &(*p)->descriptor;
 
+		if ((d->priority & PanPluginDescriptor::priority_delay_flag) && !use_delay_panners) {
+			continue;
+		}
 		if (d->in == nin && d->out == nout && d->priority > priority) {
 			priority = d->priority;
 			rv = *p;
@@ -179,6 +182,9 @@ PannerManager::select_panner (ChanCount in, ChanCount out, std::string const uri
 	for (list<PannerInfo*>::iterator p = panner_info.begin(); p != panner_info.end(); ++p) {
 		d = &(*p)->descriptor;
 
+		if ((d->priority & PanPluginDescriptor::priority_delay_flag) && !use_delay_panners) {
+			continue;
+		}
 		if (d->in == nin && d->out == -1 && d->priority > priority) {
 			priority = d->priority;
 			rv = *p;
@@ -192,6 +198,9 @@ PannerManager::select_panner (ChanCount in, ChanCount out, std::string const uri
 	for (list<PannerInfo*>::iterator p = panner_info.begin(); p != panner_info.end(); ++p) {
 		d = &(*p)->descriptor;
 
+		if ((d->priority & PanPluginDescriptor::priority_delay_flag) && !use_delay_panners) {
+			continue;
+		}
 		if (d->in == -1 && d->out == nout && d->priority > priority) {
 			priority = d->priority;
 			rv = *p;
@@ -205,6 +214,9 @@ PannerManager::select_panner (ChanCount in, ChanCount out, std::string const uri
 	for (list<PannerInfo*>::iterator p = panner_info.begin(); p != panner_info.end(); ++p) {
 		d = &(*p)->descriptor;
 
+		if ((d->priority & PanPluginDescriptor::priority_delay_flag) && !use_delay_panners) {
+			continue;
+		}
 		if (d->in == -1 && d->out == -1 && d->priority > priority) {
 			priority = d->priority;
 			rv = *p;

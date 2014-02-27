@@ -30,12 +30,12 @@
 #include "pbd/controllable.h"
 #include "pbd/cartesian.h"
 
-#include "ardour/automation_control.h"
-#include "ardour/automatable.h"
-#include "ardour/panner.h"
 #include "ardour/types.h"
+#include "ardour/panner.h"
 
 namespace ARDOUR {
+
+class PanDistributionBuffer;
 
 class Panner2in2out : public Panner
 {
@@ -58,9 +58,9 @@ class Panner2in2out : public Panner
         double position () const;
         double width () const;
 
-	std::set<Evoral::Parameter> what_can_be_automated() const;
-
 	static Panner* factory (boost::shared_ptr<Pannable>, boost::shared_ptr<Speakers>);
+
+	std::set<Evoral::Parameter> what_can_be_automated() const;
 
         std::string describe_parameter (Evoral::Parameter);
         std::string value_as_string (boost::shared_ptr<AutomationControl>) const;
@@ -77,8 +77,11 @@ class Panner2in2out : public Panner
 	float right[2];
 	float desired_left[2];
 	float desired_right[2];
-	float left_interp[2];
-	float right_interp[2];
+
+	/* We need four distribution buffers instead of two because distribute_one()
+	 * is called separately for each input. */
+	boost::shared_ptr<PanDistributionBuffer> left_dist_buf[2];
+	boost::shared_ptr<PanDistributionBuffer> right_dist_buf[2];
 
   private:
         bool clamp_stereo_pan (double& direction_as_lr_fract, double& width);

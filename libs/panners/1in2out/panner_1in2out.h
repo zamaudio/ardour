@@ -35,6 +35,8 @@
 
 namespace ARDOUR {
 
+class PanDistributionBuffer;
+
 class Panner1in2out : public Panner
 {
   public:
@@ -66,8 +68,9 @@ class Panner1in2out : public Panner
 	float right;
 	float desired_left;
 	float desired_right;
-	float left_interp;
-	float right_interp;
+
+	boost::shared_ptr<PanDistributionBuffer> left_dist_buf;
+	boost::shared_ptr<PanDistributionBuffer> right_dist_buf;
 
 	void distribute_one (AudioBuffer& src, BufferSet& obufs, gain_t gain_coeff, pframes_t nframes, uint32_t which);
         void distribute_one_automated (AudioBuffer& srcbuf, BufferSet& obufs,
