@@ -19,8 +19,46 @@
 
 #include "panner_1in2out_delay.h"
 
+#include <inttypes.h>
+
+#include <cmath>
+#include <cerrno>
+#include <fstream>
+#include <cstdlib>
+#include <string>
+#include <cstdio>
+#include <locale.h>
+#include <unistd.h>
+#include <float.h>
+#include <iomanip>
+
+#include <glibmm.h>
+
+#include "pbd/cartesian.h"
+#include "pbd/convert.h"
+#include "pbd/error.h"
+#include "pbd/failed_constructor.h"
+#include "pbd/xml++.h"
+#include "pbd/enumwriter.h"
+
+#include "evoral/Curve.hpp"
+
+#include "ardour/session.h"
+#include "ardour/panner.h"
+#include "ardour/utils.h"
+#include "ardour/audio_buffer.h"
+
+#include "ardour/debug.h"
+#include "ardour/buffer_set.h"
+#include "ardour/audio_buffer.h"
 #include "ardour/pannable.h"
+#include "ardour/pan_distribution_buffer.h"
 #include "ardour/pan_delay_buffer.h"
+
+#include "i18n.h"
+#include "panner_1in2out.h"
+
+#include "pbd/mathfix.h"
 
 using namespace std;
 using namespace ARDOUR;
@@ -37,7 +75,7 @@ static PanPluginDescriptor _descriptor = {
 extern "C" { PanPluginDescriptor* panner_descriptor () { return &_descriptor; } }
 
 Panner1in2outDelay::Panner1in2outDelay (boost::shared_ptr<Pannable> p)
-	: Panner1in2out (p)
+	: Panner (p)
 {
 	Session& session = p->session();
 
@@ -53,4 +91,195 @@ Panner*
 Panner1in2outDelay::factory (boost::shared_ptr<Pannable> p, boost::shared_ptr<Speakers> /* ignored */)
 {
 	return new Panner1in2outDelay (p);
+}
+
+
+void
+Panner1in2outDelay::update ()
+{
+        float panR, panL;
+
+        panR = position();
+        panL = 1.0f - panR;
+
+        desired_left = panL * (_pan_law_scale * panL + 1.0f - _pan_law_scale);
+        desired_right = panR * (_pan_law_scale * panR + 1.0f - _pan_law_scale);
+}
+
+void
+Panner1in2outDelay::set_position (double p)
+{
+        if (clamp_position (p)) {
+                _pannable->pan_azimuth_control->set_value (p);
+        }
+}
+
+bool
+Panner1in2outDelay::clamp_position (double& p)
+{
+        /* any position between 0.0 and 1.0 is legal */
+        DEBUG_TRACE (PBD::DEBUG::Panning, string_compose ("want to move panner to %1 - always allowed in 0.0-1.0 range\n", p));
+        p = max (min (p, 1.0), 0.0);
+        return true;
+}
+
+pair<double, double>
+Panner1in2outDelay::position_range () const
+{
+	return make_pair (0, 1);
+}
+
+double 
+Panner1in2outDelay::position () const
+{
+        return _pannable->pan_azimuth_control->get_value ();
+}
+
+void
+Panner1in2outDelay::distribute_one (AudioBuffer& srcbuf, BufferSet& obufs, gain_t gain_coeff, pframes_t nframes, uint32_t /* not used */)
+{
+	assert (obufs.count().n_audio() == 2);
+
+	Sample* dst;
+
+	Sample* const src = srcbuf.data();
+        
+	/* LEFT OUTPUT */
+
+	dst = obufs.get_audio(0).data();
+
+	left_dist_buf->update_session_config();
+	left_dist_buf->set_pan_position(1.0 - position());
+
+	left_dist_buf->mix_buffers(dst, src, nframes, left * gain_coeff, desired_left * gain_coeff);
+
+	left = desired_left;
+
+	/* XXX it would be nice to mark the buffer as written to, depending on gain (see pan_distribution_buffer.cc) */
+
+	/* RIGHT OUTPUT */
+
+	dst = obufs.get_audio(1).data();
+
+	right_dist_buf->update_session_config();
+	right_dist_buf->set_pan_position(position());
+
+	right_dist_buf->mix_buffers(dst, src, nframes, right * gain_coeff, desired_right * gain_coeff);
+
+	right = desired_right;
+
+	/* XXX it would be nice to mark the buffer as written to, depending on gain (see pan_distribution_buffer.cc) */
+}
+
+void
+Panner1in2outDelay::distribute_one_automated (AudioBuffer& srcbuf, BufferSet& obufs,
+                                         framepos_t start, framepos_t end, pframes_t nframes,
+                                         pan_t** buffers, uint32_t which)
+{
+	assert (obufs.count().n_audio() == 2);
+
+	Sample* dst;
+	Sample* const src = srcbuf.data();
+        pan_t* const position = buffers[0];
+
+	/* fetch positional data */
+
+	if (!_pannable->pan_azimuth_control->list()->curve().rt_safe_get_vector (start, end, position, nframes)) {
+		/* fallback */
+                distribute_one (srcbuf, obufs, 1.0, nframes, which);
+		return;
+	}
+
+	/* LEFT OUTPUT */
+
+	dst = obufs.get_audio(0).data();
+
+	left_dist_buf->update_session_config();
+
+	for (pframes_t n = 0; n < nframes; ++n) {
+                const float panL = 1.0f - position[n];
+
+		dst[n] += left_dist_buf->set_pan_position_and_process(panL, src[n] * panL * (_pan_law_scale * panL + 1.0f - _pan_law_scale));
+	}
+
+	/* XXX it would be nice to mark the buffer as written to */
+
+	/* RIGHT OUTPUT */
+
+	dst = obufs.get_audio(1).data();
+
+	right_dist_buf->update_session_config();
+
+	for (pframes_t n = 0; n < nframes; ++n) {
+                const float panR = position[n];
+                
+		dst[n] += right_dist_buf->set_pan_position_and_process(panR, src[n] * panR * (_pan_law_scale * panR + 1.0f - _pan_law_scale));
+	}
+
+	/* XXX it would be nice to mark the buffer as written to */
+}
+
+XMLNode&
+Panner1in2outDelay::get_state ()
+{
+	XMLNode& root (Panner::get_state ());
+	root.add_property (X_("uri"), _descriptor.panner_uri);
+	/* this is needed to allow new sessions to load with old Ardour: */
+	root.add_property (X_("type"), _descriptor.name);
+	return root;
+}
+
+
+std::set<Evoral::Parameter> 
+Panner1in2outDelay::what_can_be_automated() const
+{
+        set<Evoral::Parameter> s;
+        s.insert (Evoral::Parameter (PanAzimuthAutomation));
+        return s;
+}
+
+string
+Panner1in2outDelay::describe_parameter (Evoral::Parameter p)
+{
+        switch (p.type()) {
+        case PanAzimuthAutomation:
+                return _("L/R");
+        default:
+                return _pannable->describe_parameter (p);
+        }
+}
+
+string 
+Panner1in2outDelay::value_as_string (boost::shared_ptr<AutomationControl> ac) const
+{
+        /* DO NOT USE LocaleGuard HERE */
+        double val = ac->get_value();
+
+        switch (ac->parameter().type()) {
+        case PanAzimuthAutomation:
+                /* We show the position of the center of the image relative to the left & right.
+                   This is expressed as a pair of percentage values that ranges from (100,0) 
+                   (hard left) through (50,50) (hard center) to (0,100) (hard right).
+                   
+                   This is pretty wierd, but its the way audio engineers expect it. Just remember that
+                   the center of the USA isn't Kansas, its (50LA, 50NY) and it will all make sense.
+
+		   This is designed to be as narrow as possible. Dedicated
+		   panner GUIs can do their own version of this if they need
+		   something less compact.
+                */
+                
+                return string_compose (_("L%1R%2"), (int) rint (100.0 * (1.0 - val)),
+                                       (int) rint (100.0 * val));
+                
+        default:
+                return _("unused");
+        }
+}
+
+void
+Panner1in2outDelay::reset ()
+{
+	set_position (0.5);
+	update ();
 }

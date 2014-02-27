@@ -37,7 +37,7 @@ def build(bld):
     obj.includes     = ['.']
     obj.name         = 'libardour_pan1in2out_delay'
     obj.target       = 'pan1in2out_delay'
-    obj.use          = 'libardour libardour_cp libardour_pan1in2out libpbd'
+    obj.use          = 'libardour libardour_cp libpbd'
     obj.vnum         = LIBARDOUR_PAN1IN2OUT_LIB_VERSION
     obj.install_path = os.path.join(bld.env['LIBDIR'], 'ardour3', 'panners')
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2014 Sebastian Reichelt
+    Copyright (C) 2004-2011 Paul Davis
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -17,10 +17,47 @@
 
 */
 
-#include "panner_2in2out_delay.h"
+#include <inttypes.h>
 
-#include "ardour/pannable.h"
+#include <cmath>
+#include <cerrno>
+#include <fstream>
+#include <cstdlib>
+#include <string>
+#include <cstdio>
+#include <locale.h>
+#include <unistd.h>
+#include <float.h>
+#include <iomanip>
+
+#include <glibmm.h>
+
+#include "pbd/cartesian.h"
+#include "pbd/convert.h"
+#include "pbd/error.h"
+#include "pbd/failed_constructor.h"
+#include "pbd/xml++.h"
+#include "pbd/enumwriter.h"
+
+#include "evoral/Curve.hpp"
+
+#include "ardour/audio_buffer.h"
+#include "ardour/audio_buffer.h"
+#include "ardour/buffer_set.h"
+#include "ardour/pan_controllable.h"
+#include "ardour/pan_distribution_buffer.h"
 #include "ardour/pan_delay_buffer.h"
+#include "ardour/pannable.h"
+#include "ardour/session.h"
+#include "ardour/utils.h"
+#include "ardour/mix.h"
+
+#include "panner_2in2out.h"
+
+#include "i18n.h"
+
+#include "pbd/mathfix.h"
+#include "panner_2in2out_delay.h"
 
 using namespace std;
 using namespace ARDOUR;
@@ -37,7 +74,7 @@ static PanPluginDescriptor _descriptor = {
 extern "C" { PanPluginDescriptor* panner_descriptor () { return &_descriptor; } }
 
 Panner2in2outDelay::Panner2in2outDelay (boost::shared_ptr<Pannable> p)
-	: Panner2in2out (p)
+	: Panner (p)
 {
 	Session& session = p->session();
 
@@ -45,14 +82,372 @@ Panner2in2outDelay::Panner2in2outDelay (boost::shared_ptr<Pannable> p)
 	left_dist_buf[1].reset(new PanDelayBuffer(session));
 	right_dist_buf[0].reset(new PanDelayBuffer(session));
 	right_dist_buf[1].reset(new PanDelayBuffer(session));
+
+	if (!_pannable->has_state()) {
+		_pannable->pan_azimuth_control->set_value (0.5);
+		_pannable->pan_width_control->set_value (1.0);
+	}
+
+	double const w = width();
+	double const wrange = min (position(), (1 - position())) * 2;
+	if (fabs(w) > wrange) {
+		set_width(w > 0 ? wrange : -wrange);
+	}
+
+
+	update ();
+
+	/* LEFT SIGNAL */
+	left[0] = desired_left[0];
+	right[0] = desired_right[0]; 
+
+	/* RIGHT SIGNAL */
+	left[1] = desired_left[1];
+	right[1] = desired_right[1];
+
+	_pannable->pan_azimuth_control->Changed.connect_same_thread (*this, boost::bind (&Panner2in2outDelay::update, this));
+	_pannable->pan_width_control->Changed.connect_same_thread (*this, boost::bind (&Panner2in2outDelay::update, this));
 }
 
 Panner2in2outDelay::~Panner2in2outDelay ()
 {
 }
 
+double 
+Panner2in2outDelay::position () const
+{
+        return _pannable->pan_azimuth_control->get_value();
+}
+
+double 
+Panner2in2outDelay::width () const
+{
+        return _pannable->pan_width_control->get_value();
+}
+
+void
+Panner2in2outDelay::set_position (double p)
+{
+        if (clamp_position (p)) {
+                _pannable->pan_azimuth_control->set_value (p);
+        }
+}
+
+void
+Panner2in2outDelay::set_width (double p)
+{
+        if (clamp_width (p)) {
+                _pannable->pan_width_control->set_value (p);
+        }
+}
+
+void
+Panner2in2outDelay::thaw ()
+{
+	Panner::thaw ();
+	if (_frozen == 0) {
+		update ();
+	}
+}
+
+void
+Panner2in2outDelay::update ()
+{
+	if (_frozen) {
+		return;
+	}
+
+        /* it would be very nice to split this out into a virtual function
+           that can be accessed from BaseStereoPanner and used in do_distribute_automated().
+           
+           but the place where its used in do_distribute_automated() is a tight inner loop,
+           and making "nframes" virtual function calls to compute values is an absurd
+           overhead.
+        */
+        
+        /* x == 0 => hard left = 180.0 degrees
+           x == 1 => hard right = 0.0 degrees
+        */
+        
+        float pos[2];
+        double width = this->width ();
+        const double direction_as_lr_fract = position ();
+
+        double const wrange = min (position(), (1 - position())) * 2;
+        if (fabs(width) > wrange) {
+                width = (width  > 0 ? wrange : -wrange);
+        }
+
+        pos[0] = direction_as_lr_fract - (width*0.5); // left signal lr_fract
+        pos[1] = direction_as_lr_fract + (width*0.5); // right signal lr_fract
+        
+        /* compute target gain coefficients for both input signals */
+        
+        float panR;
+        float panL;
+        
+        /* left signal */
+        
+        panR = pos[0];
+        panL = 1.0f - panR;
+        desired_left[0] = panL * (_pan_law_scale * panL + 1.0f - _pan_law_scale);
+        desired_right[0] = panR * (_pan_law_scale * panR + 1.0f - _pan_law_scale);
+        
+        /* right signal */
+        
+        panR = pos[1];
+        panL = 1.0f - panR;
+        desired_left[1] = panL * (_pan_law_scale * panL + 1.0f - _pan_law_scale);
+        desired_right[1] = panR * (_pan_law_scale * panR + 1.0f - _pan_law_scale);
+}
+
+bool
+Panner2in2outDelay::clamp_position (double& p)
+{
+        double w = width ();
+        return clamp_stereo_pan (p, w);
+}
+
+bool
+Panner2in2outDelay::clamp_width (double& w)
+{
+        double p = position ();
+        return clamp_stereo_pan (p, w);
+}
+
+pair<double, double>
+Panner2in2outDelay::position_range () const
+{
+	return make_pair (0.5 - (1 - width()) / 2, 0.5 + (1 - width()) / 2);
+}
+
+pair<double, double>
+Panner2in2outDelay::width_range () const
+{
+	double const w = min (position(), (1 - position())) * 2;
+	return make_pair (-w, w);
+}
+
+bool
+Panner2in2outDelay::clamp_stereo_pan (double& direction_as_lr_fract, double& width)
+{
+        double r_pos;
+        double l_pos;
+
+        width = max (min (width, 1.0), -1.0);
+        direction_as_lr_fract = max (min (direction_as_lr_fract, 1.0), 0.0);
+
+        r_pos = direction_as_lr_fract + (width*0.5);
+        l_pos = direction_as_lr_fract - (width*0.5);
+
+        if (width < 0.0) {
+                swap (r_pos, l_pos);
+        }
+
+        /* if the new left position is less than or equal to zero (hard left) and the left panner
+           is already there, we're not moving the left signal. 
+        */
+        
+        if (l_pos < 0.0) {
+                return false;
+        }
+
+        /* if the new right position is less than or equal to 1.0 (hard right) and the right panner
+           is already there, we're not moving the right signal. 
+        */
+        
+        if (r_pos > 1.0) {
+                return false;
+                
+        }
+
+        return true;
+}
+
+void
+Panner2in2outDelay::distribute_one (AudioBuffer& srcbuf, BufferSet& obufs, gain_t gain_coeff, pframes_t nframes, uint32_t which)
+{
+	assert (obufs.count().n_audio() == 2);
+
+	Sample* dst;
+
+	Sample* const src = srcbuf.data();
+        
+	/* LEFT OUTPUT */
+
+	dst = obufs.get_audio(0).data();
+
+	left_dist_buf[which]->update_session_config();
+	left_dist_buf[which]->set_pan_position(1.0 - position());
+
+	left_dist_buf[which]->mix_buffers(dst, src, nframes, left[which] * gain_coeff, desired_left[which] * gain_coeff);
+
+	left[which] = desired_left[which];
+
+	/* XXX it would be nice to mark the buffer as written to, depending on gain (see pan_distribution_buffer.cc) */
+
+	/* RIGHT OUTPUT */
+
+	dst = obufs.get_audio(1).data();
+
+	right_dist_buf[which]->update_session_config();
+	right_dist_buf[which]->set_pan_position(position());
+
+	right_dist_buf[which]->mix_buffers(dst, src, nframes, right[which] * gain_coeff, desired_right[which] * gain_coeff);
+
+	right[which] = desired_right[which];
+
+	/* XXX it would be nice to mark the buffer as written to, depending on gain (see pan_distribution_buffer.cc) */
+}
+
+void
+Panner2in2outDelay::distribute_one_automated (AudioBuffer& srcbuf, BufferSet& obufs,
+                                         framepos_t start, framepos_t end, pframes_t nframes,
+                                         pan_t** buffers, uint32_t which)
+{
+	assert (obufs.count().n_audio() == 2);
+
+	Sample* dst;
+	Sample* const src = srcbuf.data();
+        pan_t* const position = buffers[0];
+        pan_t* const width = buffers[1];
+
+	/* fetch positional data */
+
+	if (!_pannable->pan_azimuth_control->list()->curve().rt_safe_get_vector (start, end, position, nframes)) {
+		/* fallback */
+                distribute_one (srcbuf, obufs, 1.0, nframes, which);
+		return;
+	}
+
+	if (!_pannable->pan_width_control->list()->curve().rt_safe_get_vector (start, end, width, nframes)) {
+		/* fallback */
+                distribute_one (srcbuf, obufs, 1.0, nframes, which);
+		return;
+	}
+
+	/* LEFT OUTPUT */
+
+	dst = obufs.get_audio(0).data();
+
+	left_dist_buf[which]->update_session_config();
+
+	for (pframes_t n = 0; n < nframes; ++n) {
+                float panR;
+
+                if (which == 0) { 
+                        // panning left signal
+                        panR = position[n] - (width[n]*0.5f); // center - width/2
+                } else {
+                        // panning right signal
+                        panR = position[n] + (width[n]*0.5f); // center + width/2
+                }
+
+                panR = max(0.f, min(1.f, panR));
+
+                const float panL = 1 - panR;
+
+		dst[n] += left_dist_buf[which]->set_pan_position_and_process(1.0f - position[n], src[n] * panL * (_pan_law_scale * panL + 1.0f - _pan_law_scale));
+	}
+
+	/* XXX it would be nice to mark the buffer as written to */
+
+	/* RIGHT OUTPUT */
+
+	dst = obufs.get_audio(1).data();
+
+	right_dist_buf[which]->update_session_config();
+
+	for (pframes_t n = 0; n < nframes; ++n) {
+                float panR;
+
+                if (which == 0) { 
+                        // panning left signal
+                        panR = position[n] - (width[n]*0.5f); // center - width/2
+                } else {
+                        // panning right signal
+                        panR = position[n] + (width[n]*0.5f); // center + width/2
+                }
+
+		dst[n] += right_dist_buf[which]->set_pan_position_and_process(position[n], src[n] * panR * (_pan_law_scale * panR + 1.0f - _pan_law_scale));
+	}
+
+	/* XXX it would be nice to mark the buffer as written to */
+}
+
 Panner*
 Panner2in2outDelay::factory (boost::shared_ptr<Pannable> p, boost::shared_ptr<Speakers> /* ignored */)
 {
 	return new Panner2in2outDelay (p);
+}
+
+XMLNode&
+Panner2in2outDelay::get_state ()
+{
+	XMLNode& root (Panner::get_state ());
+	root.add_property (X_("uri"), _descriptor.panner_uri);
+	/* this is needed to allow new sessions to load with old Ardour: */
+	root.add_property (X_("type"), _descriptor.name);
+	return root;
+}
+
+std::set<Evoral::Parameter> 
+Panner2in2outDelay::what_can_be_automated() const
+{
+        set<Evoral::Parameter> s;
+        s.insert (Evoral::Parameter (PanAzimuthAutomation));
+        s.insert (Evoral::Parameter (PanWidthAutomation));
+        return s;
+}
+
+string
+Panner2in2outDelay::describe_parameter (Evoral::Parameter p)
+{
+        switch (p.type()) {
+        case PanAzimuthAutomation:
+                return _("L/R");
+        case PanWidthAutomation:
+                return _("Width");
+        default:
+                return _pannable->describe_parameter (p);
+        }
+}
+
+string 
+Panner2in2outDelay::value_as_string (boost::shared_ptr<AutomationControl> ac) const
+{
+        /* DO NOT USE LocaleGuard HERE */
+        double val = ac->get_value();
+
+        switch (ac->parameter().type()) {
+        case PanAzimuthAutomation:
+                /* We show the position of the center of the image relative to the left & right.
+                   This is expressed as a pair of percentage values that ranges from (100,0) 
+                   (hard left) through (50,50) (hard center) to (0,100) (hard right).
+                   
+                   This is pretty wierd, but its the way audio engineers expect it. Just remember that
+                   the center of the USA isn't Kansas, its (50LA, 50NY) and it will all make sense.
+                
+		   This is designed to be as narrow as possible. Dedicated
+		   panner GUIs can do their own version of this if they need
+		   something less compact.
+                */
+                
+                return string_compose (_("L%1R%2"), (int) rint (100.0 * (1.0 - val)),
+                                       (int) rint (100.0 * val));
+
+        case PanWidthAutomation:
+                return string_compose (_("Width: %1%%"), (int) floor (100.0 * val));
+                
+        default:
+                return _("unused");
+        }
+}
+
+void
+Panner2in2outDelay::reset ()
+{
+	set_position (0.5);
+	set_width (1);
+	update ();
 }
