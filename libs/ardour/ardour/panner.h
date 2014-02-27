@@ -185,8 +185,6 @@ struct PanPluginDescriptor {
 	int32_t out;
 	uint32_t priority;
 	ARDOUR::Panner* (*factory)(boost::shared_ptr<ARDOUR::Pannable>, boost::shared_ptr<ARDOUR::Speakers>);
-
-	static const uint32_t priority_delay_flag = 0x80000000;
 };
 }
 

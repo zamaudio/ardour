@@ -51,7 +51,7 @@ public:
 	void discover_panners ();
 	std::list<PannerInfo*> panner_info;
 
-	PannerInfo* select_panner (ChanCount in, ChanCount out, bool use_delay_panners, std::string const uri = "");
+	PannerInfo* select_panner (ChanCount in, ChanCount out, std::string const uri = "");
 	PannerInfo* get_by_uri (std::string uri) const;
 	PannerUriMap get_available_panners(uint32_t const a_in, uint32_t const a_out) const;
 

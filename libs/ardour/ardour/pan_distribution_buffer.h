@@ -46,10 +46,10 @@ class PanDistributionBuffer
 {
   public:
 	PanDistributionBuffer();
-	virtual ~PanDistributionBuffer();
+	virtual ~PanDistributionBuffer() {}
 
 	/** Updates internal data according to the session configuration. */
-	virtual void update_session_config();
+	virtual void update_session_config() { }
 
 	/** Updates internal data according to the given panner position.
 	 *
@@ -100,14 +100,14 @@ class PanDistributionBuffer
 	 * to be no-ops and are therefore skipped. Must be set by subclasses. */
 	bool _active;
 
-	virtual void do_set_pan_position(float pan_position);
-	virtual Sample do_process(Sample input);
+	virtual void do_set_pan_position(float /* pan_position */) { };
+	virtual Sample do_process(Sample input) { return input; }
 	virtual void do_mix_buffers(Sample *dst, const Sample *src, pframes_t nframes, float gain);
 
   private:
 	/* Maximum number of frames to interpolate between gains (used by
 	 * mix_buffers(); must be a multiple of 16). */
-	static const pframes_t _gain_interp_frames = 64;
+	static const pframes_t _gain_interp_frames;
 };
 
 } // namespace

@@ -18,8 +18,6 @@
 */
 
 #include "ardour/session.h"
-#include "ardour/route.h"
-#include "ardour/panner_shell.h"
 
 #include "gui_thread.h"
 #include "session_option_editor.h"
@@ -277,13 +275,6 @@ SessionOptionEditor::SessionOptionEditor (Session* s)
 
 	add_option (_("Misc"), new OptionEditorHeading (_("Panning")));
 
-	add_option (_("Misc"), new BoolOption (
-			    "use-delay-panners",
-			    _("Use delay-based (Haas effect) panners by default"),
-			    sigc::mem_fun (*_session_config, &SessionConfiguration::get_use_delay_panners),
-			    sigc::mem_fun (*this, &SessionOptionEditor::set_use_delay_panners)
-			    ));
-
 	Gtk::Adjustment *panning_delay_adjustment = manage (new Gtk::Adjustment (0, 0, 10, .1, 1));
 	add_option (_("Misc"), new HSliderOption (
 			    "panning-delay",
@@ -401,21 +392,4 @@ bool
 SessionOptionEditor::get_use_monitor_section ()
 {
 	return _session->monitor_out() != 0;
-}
-
-bool
-SessionOptionEditor::set_use_delay_panners (bool yn)
-{
-	bool changed = _session_config->set_use_delay_panners (yn);
-
-	string txt = _("Would you like to reset all selectable panners to their new default?");
-	MessageDialog msg (txt, false, MESSAGE_QUESTION, BUTTONS_YES_NO, true);
-	if (msg.run() == RESPONSE_YES) {
-		boost::shared_ptr<RouteList> routes = _session->get_routes ();
-		for (RouteList::const_iterator i = routes->begin(); i != routes->end(); ++i) {
-			(*i)->panner_shell()->select_default_panner ();
-		}
-	}
-
-	return changed;
 }

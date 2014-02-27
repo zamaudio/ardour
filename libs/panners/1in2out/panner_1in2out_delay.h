@@ -30,7 +30,7 @@ class Panner1in2outDelay : public Panner1in2out
 	Panner1in2outDelay (boost::shared_ptr<Pannable>);
 	~Panner1in2outDelay ();
 
-        static Panner* factory (boost::shared_ptr<Pannable>, boost::shared_ptr<Speakers>);
+	static Panner* factory (boost::shared_ptr<Pannable>, boost::shared_ptr<Speakers>);
 };
 
 } // namespace

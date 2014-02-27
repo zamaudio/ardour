@@ -297,8 +297,6 @@ def configure(conf):
 
     conf.define('CURRENT_SESSION_FILE_VERSION', CURRENT_SESSION_FILE_VERSION)
 
-    conf.define('BOOST_CB_DISABLE_DEBUG', 1)
-
     conf.check(header_name='sys/vfs.h', define_name='HAVE_SYS_VFS_H',mandatory=False)
     conf.check(header_name='sys/statvfs.h', define_name='HAVE_SYS_STATVFS_H',mandatory=False)
 

@@ -30,7 +30,7 @@ static PanPluginDescriptor _descriptor = {
         "http://ardour.org/plugin/panner_2in2out_delay",
         "http://ardour.org/plugin/panner_2in2out#ui",
         2, 2, 
-        10000 | PanPluginDescriptor::priority_delay_flag,
+        5000,
         Panner2in2outDelay::factory
 };
 

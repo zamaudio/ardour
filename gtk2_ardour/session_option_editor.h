@@ -37,7 +37,5 @@ private:
 	bool set_use_monitor_section (bool);
 	bool get_use_monitor_section ();
 
-	bool set_use_delay_panners (bool);
-
 	ComboOption<float>* _vpu;
 };

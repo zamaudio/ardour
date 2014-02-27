@@ -38,11 +38,9 @@
 
 namespace ARDOUR {
 
-class PanDistributionBuffer;
-
 class Pannerbalance : public Panner
 {
-  public:
+	public:
 	Pannerbalance (boost::shared_ptr<Pannable>);
 	~Pannerbalance ();
 
@@ -66,15 +64,14 @@ class Pannerbalance : public Panner
 	void reset ();
 	void thaw ();
 
-  protected:
-	float gain[2];
-	float desired_gain[2];
-
-	boost::shared_ptr<PanDistributionBuffer> dist_buf[2];
+	protected:
+	float pos[2];
+	float desired_pos[2];
+	float pos_interp[2];
 
 	void update ();
 
-  private:
+	private:
 	void distribute_one (AudioBuffer& srcbuf, BufferSet& obufs, gain_t gain_coeff, pframes_t nframes, uint32_t which);
 	void distribute_one_automated (AudioBuffer& srcbuf, BufferSet& obufs,
 			framepos_t start, framepos_t end, pframes_t nframes,

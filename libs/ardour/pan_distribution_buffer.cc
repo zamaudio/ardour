@@ -23,29 +23,11 @@
 using namespace std;
 using namespace ARDOUR;
 
+const pframes_t PanDistributionBuffer::_gain_interp_frames = 64;
+
 PanDistributionBuffer::PanDistributionBuffer()
 	: _active(false)
 {
-}
-
-PanDistributionBuffer::~PanDistributionBuffer()
-{
-}
-
-void
-PanDistributionBuffer::update_session_config()
-{
-}
-
-void
-PanDistributionBuffer::do_set_pan_position(float pan_position)
-{
-}
-
-Sample
-PanDistributionBuffer::do_process(Sample input)
-{
-	return input;
 }
 
 void
