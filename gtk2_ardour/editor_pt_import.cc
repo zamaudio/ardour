@@ -58,6 +58,7 @@
 #include "interthread_progress_window.h"
 #include "mouse_cursors.h"
 #include "editor_cursors.h"
+#include "pt_import_selector.h"
 
 #include "pbd/i18n.h"
 
@@ -82,39 +83,13 @@ Editor::external_pt_dialog ()
 		return;
 	}
 
-	Gtk::FileChooserDialog dialog (_("Import PT Session"), FILE_CHOOSER_ACTION_OPEN);
-	dialog.add_button (Gtk::Stock::CANCEL, Gtk::RESPONSE_CANCEL);
-	dialog.add_button (Gtk::Stock::OK, Gtk::RESPONSE_OK);
+	PTImportSelector dialog (import_ptf);
+	dialog.set_session (_session);
 
 	while (true) {
 		int result = dialog.run ();
 
-		if (result == Gtk::RESPONSE_OK) {
-			ptpath = dialog.get_filename ();
-
-			if (!Glib::file_test (ptpath, Glib::FILE_TEST_IS_DIR|Glib::FILE_TEST_EXISTS)) {
-				Gtk::MessageDialog msg (string_compose (_("%1: this is only the directory/folder name, not the filename.\n"), ptpath));
-				msg.run ();
-				continue;
-			}
-		}
-
-		if (ptpath.length ()) {
-			uint32_t srate = _session->sample_rate ();
-
-			if (import_ptf.load (ptpath, srate) == -1) {
-				MessageDialog msg (_("Doesn't seem to be a valid PT session file"));
-				msg.run ();
-				return;
-			} else {
-				MessageDialog msg (string_compose (_("PT v%1 Session @ %2Hz\n\n%3 audio files\n%4 audio regions\n%5 active audio regions\n%6 midi regions\n%7 active midi regions\n\nContinue..."), (int)import_ptf.version, import_ptf.sessionrate, import_ptf.audiofiles.size (), import_ptf.regions.size (), import_ptf.tracks.size (), import_ptf.midiregions.size (), import_ptf.miditracks.size ()));
-				msg.add_button (Gtk::Stock::CANCEL, Gtk::RESPONSE_CANCEL);
-
-				int result = msg.run ();
-				if (result != Gtk::RESPONSE_OK) {
-					return;
-				}
-			}
+		if (result == Gtk::RESPONSE_ACCEPT) {
 
 			import_pt_status.all_done = false;
 
@@ -141,9 +116,7 @@ Editor::external_pt_dialog ()
 				msg.run ();
 			}
 			break;
-		}
-
-		if (result == Gtk::RESPONSE_CANCEL) {
+		} else if (result == Gtk::RESPONSE_CANCEL) {
 			break;
 		}
 	}
