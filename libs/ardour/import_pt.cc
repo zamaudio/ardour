@@ -230,21 +230,29 @@ Session::import_pt (PTFFormat& ptf, ImportStatus& status)
 				just_one_src.clear();
 				ok = import_sndfile_as_region (fullpath, SrcBest, pos, just_one_src, status);
 			} else {
-				/* ptformat does not know the length of sources so we cannot do this:
-				XMLNode srcxml (X_("Source"));
-				srcxml.set_property ("name", a->filename);
-				srcxml.set_property ("type", "audio");
-				srcxml.set_property ("id", PBD::ID ().to_s ());
-				boost::shared_ptr<Source> source = SourceFactory::createSilent (this, srcxml, a->length, sample_rate ());
-				p.index1 = a->index;
-				p.id = source->id ();
-				ptfwavpair.push_back (p);
-				imported.push_back (source);
-				*/
-
-				/* Out of options */
 				onefailed = true;
-				warning << string_compose (_("PT Import : MISSING `%1`"), fullpath) << endmsg;
+
+				/* ptformat knows length of sources *in PT sample rate*
+				 * BUT if ardour user later resolves missing file,
+				 * it won't be resampled, so we can only do this
+				 * when sample rates are matching
+				 */
+				if (sample_rate () == ptf.sessionrate) {
+					/* Insert reference to missing source */
+					samplecnt_t sourcelen = w->length;
+					XMLNode srcxml (X_("Source"));
+					srcxml.set_property ("name", w->filename);
+					srcxml.set_property ("type", "audio");
+					srcxml.set_property ("id", PBD::ID ().to_s ());
+					boost::shared_ptr<Source> source = SourceFactory::createSilent (*this, srcxml, sourcelen, sample_rate ());
+					p.index1 = w->index;
+					p.id = source->id ();
+					ptfwavpair.push_back (p);
+					imported.push_back (source);
+					warning << string_compose (_("PT Import : MISSING `%1`, inserting ref to missing source"), fullpath) << endmsg;
+				} else {
+					warning << string_compose (_("PT Import : MISSING `%1`, please check Audio Files"), fullpath) << endmsg;
+				}
 			}
 		}
 		if (ok) {
@@ -253,9 +261,6 @@ Session::import_pt (PTFFormat& ptf, ImportStatus& status)
 
 			ptfwavpair.push_back (p);
 			imported.push_back (just_one_src.back ());
-		} else {
-			onefailed = true;
-			warning << string_compose (_("PT Import : FAILED `%1`"), fullpath) << endmsg;
 		}
 	}
 
